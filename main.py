@@ -50,13 +50,19 @@ class EHentaiPlugin(Star):
         
         # 记录日志
         get_logger().info("[E-Hentai插件] 插件已初始化")
-    
-    async def __aenter__(self):
-        """插件加载时初始化外部管理器"""
+        
+        # 立即启动异步初始化任务 (AstrBot 不一定会调用 __aenter__)
+        asyncio.create_task(self._init_managers())
+        
+    async def _init_managers(self):
+        """异步初始化系统管理器"""
         get_logger().info("[E-Hentai插件] 开始初始化 R2 和 D1 管理器")
         await init_r2_manager(self.plugin_config)
         await init_d1_manager(self.plugin_config)
         get_logger().info("[E-Hentai插件] R2 和 D1 初始化完成")
+    
+    async def __aenter__(self):
+        """向后兼容"""
         return self
     
     def build_client(self) -> EHentaiClient:
