@@ -114,6 +114,10 @@ class PluginConfig:
         return self.get('ehentai_curl_cffi_skip_on_error', True)
     
     @property
+    def ehentai_cloudflare_worker_url(self) -> str:
+        return self.get('ehentai_cloudflare_worker_url', '')
+    
+    @property
     def ehentai_stream_upload_first(self) -> bool:
         return self.get('ehentai_stream_upload_first', True)
     

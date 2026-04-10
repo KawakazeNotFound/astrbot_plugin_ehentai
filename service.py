@@ -139,6 +139,7 @@ class EHentaiClient:
         enable_direct_ip: bool = True,
         curl_cffi_skip_on_error: bool = True,
         min_cache_file_size_kb: int = 100,
+        cloudflare_worker_url: str = "",
     ) -> None:
         self.site = site.lower()
         self.base_url = self._resolve_base_url(site, base_url)
@@ -158,6 +159,7 @@ class EHentaiClient:
         self.backend = backend.lower()
         self.http3 = http3
         self.desktop_site = desktop_site
+        self.cloudflare_worker_url = cloudflare_worker_url.strip()
         self.impersonate = impersonate
         self.enable_direct_ip = enable_direct_ip
         self.curl_cffi_skip_on_error = curl_cffi_skip_on_error
@@ -861,10 +863,115 @@ class EHentaiClient:
             return True
         return False
 
+    async def _search_via_worker(
+        self, keyword: str, limit: int, options: Optional[SearchOptions], eh_page: int
+    ) -> list[GalleryResult]:
+        """使用 Cloudflare Worker 搜索"""
+        logger.debug(f"[Worker搜索] 准备请求 Worker: {self.cloudflare_worker_url}")
+        
+        # 构造请求体
+        payload = {
+            "keyword": keyword,
+            "page": eh_page,
+            "baseUrl": self.base_url,  # 传入基础 URL，支持 E-Hentai 和 ExHentai
+        }
+        
+        # 如果有 cookies，也传给 Worker
+        if self.cookie:
+            payload["cookies"] = self.cookie
+            logger.debug(f"[Worker搜索] 使用自定义 Cookie (长度: {len(self.cookie)} 字符)")
+        
+        # 构造请求头
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": self.user_agent,
+        }
+        
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout,
+                verify=False,
+                follow_redirects=True,
+            ) as client:
+                logger.debug(f"[Worker搜索] 发送 POST 请求到 Worker，基础 URL: {self.base_url}")
+                resp = await client.post(
+                    self.cloudflare_worker_url,
+                    json=payload,
+                    headers=headers,
+                )
+            
+            logger.debug(f"[Worker搜索] 收到响应，状态码: {resp.status_code}")
+            
+            if resp.status_code != 200:
+                logger.error(f"[Worker搜索] Worker 返回非 200 状态码: {resp.status_code}")
+                raise RuntimeError(f"Worker 返回状态码: {resp.status_code}")
+            
+            # 解析 JSON 响应
+            data = resp.json()
+            logger.debug(f"[Worker搜索] Worker 响应: success={data.get('success')}, count={data.get('count')}")
+            
+            if not data.get("success"):
+                logger.error(f"[Worker搜索] Worker 返回失败响应")
+                raise RuntimeError("Worker 搜索失败")
+            
+            # 从 Worker 响应转换为 GalleryResult 列表
+            results: list[GalleryResult] = []
+            worker_results = data.get("results", [])
+            
+            for idx, item in enumerate(worker_results[:limit]):
+                try:
+                    gid = str(item.get("gid", ""))
+                    token = str(item.get("token", ""))
+                    title = str(item.get("title", ""))
+                    url = str(item.get("url", ""))
+                    category = str(item.get("category", ""))
+                    rating = item.get("rating", 0)
+                    
+                    if not gid or not token:
+                        logger.warning(f"[Worker搜索] 第 {idx+1} 项缺少 gid 或 token，跳过")
+                        continue
+                    
+                    result = GalleryResult(
+                        gid=gid,
+                        token=token,
+                        title=title,
+                        category=category,
+                        rating=rating,
+                        posted=0,
+                        link=url,
+                    )
+                    results.append(result)
+                    logger.debug(f"[Worker搜索] 第 {idx+1} 项: gid={gid}, title={title}")
+                except Exception as e:
+                    logger.warning(f"[Worker搜索] 解析第 {idx+1} 项时出错: {e}")
+                    continue
+            
+            logger.info(f"[Worker搜索] 成功从 Worker 解析出 {len(results)} 条结果")
+            return results
+            
+        except httpx.RequestError as e:
+            logger.error(f"[Worker搜索] 网络请求错误: {type(e).__name__}: {e}")
+            raise RuntimeError(f"Worker 请求失败: {e}")
+        except Exception as e:
+            logger.error(f"[Worker搜索] 未知错误: {type(e).__name__}: {e}")
+            raise RuntimeError(f"Worker 搜索出错: {e}")
+
     async def search(
         self, keyword: str, limit: int = 5, options: Optional[SearchOptions] = None, eh_page: int = 0
     ) -> list[GalleryResult]:
         logger.info(f"[搜索] 开始搜索: keyword='{keyword}', limit={limit}, backend={self.backend}")
+        
+        # 如果配置了 Cloudflare Worker，使用 Worker 搜索
+        if self.cloudflare_worker_url:
+            logger.info(f"[搜索] 使用 Cloudflare Worker 搜索: {self.cloudflare_worker_url}")
+            try:
+                results = await self._search_via_worker(keyword, limit, options, eh_page)
+                logger.info(f"[搜索] Worker 搜索成功，获得 {len(results)} 条结果")
+                await self._enrich_japanese_titles(results)
+                return results
+            except Exception as error:
+                logger.warning(f"[搜索] Worker 搜索出错: {type(error).__name__}: {error}，将降级到直连模式")
+                # 继续使用原有的直连逻辑
         
         # 如果配置了搜索失败立即降级，或者后端是 curl_cffi，尝试 curl_cffi
         # 但如果失败则立即转向 httpx

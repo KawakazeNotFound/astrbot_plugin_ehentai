@@ -78,6 +78,7 @@ class EHentaiPlugin(Star):
             impersonate=self.plugin_config.ehentai_impersonate,
             enable_direct_ip=self.plugin_config.ehentai_enable_direct_ip,
             curl_cffi_skip_on_error=self.plugin_config.ehentai_curl_cffi_skip_on_error,
+            cloudflare_worker_url=self.plugin_config.ehentai_cloudflare_worker_url,
         )
     
     def build_search_options(self) -> SearchOptions:
