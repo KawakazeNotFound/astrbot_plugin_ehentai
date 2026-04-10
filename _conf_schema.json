@@ -1,0 +1,225 @@
+{
+  "ehentai_site": {
+    "type": "string",
+    "description": "E-Hentai 站点 (e 或 ex)",
+    "hint": "e 表示 e-hentai.org，ex 表示 exhentai.org",
+    "default": "e",
+    "options": ["e", "ex"]
+  },
+  "ehentai_base_url": {
+    "type": "string",
+    "description": "E-Hentai 基础 URL",
+    "hint": "通常无需修改，程序会根据 ehentai_site 自动选择",
+    "default": "https://e-hentai.org"
+  },
+  "ehentai_cookie": {
+    "type": "text",
+    "description": "E-Hentai Cookie",
+    "hint": "原始 Cookie Header；如填写，将优先于下方身份 Cookie 配置",
+    "default": ""
+  },
+  "ehentai_ipb_member_id": {
+    "type": "string",
+    "description": "IPB Member ID",
+    "default": ""
+  },
+  "ehentai_ipb_pass_hash": {
+    "type": "string",
+    "description": "IPB Pass Hash",
+    "default": ""
+  },
+  "ehentai_igneous": {
+    "type": "string",
+    "description": "Igneous Cookie（使用 exhentai 时通常需要）",
+    "default": ""
+  },
+  "ehentai_cf_clearance": {
+    "type": "string",
+    "description": "Cloudflare 验证 Cookie",
+    "default": ""
+  },
+  "ehentai_timeout": {
+    "type": "int",
+    "description": "请求超时时间（秒）",
+    "default": 20,
+    "hint": "HTTP 请求的超时秒数"
+  },
+  "ehentai_max_results": {
+    "type": "int",
+    "description": "/search 返回条数上限",
+    "default": 5
+  },
+  "ehentai_download_dir": {
+    "type": "string",
+    "description": "下载目录",
+    "default": "data/ehentai",
+    "hint": "压缩包下载到本地的目录"
+  },
+  "ehentai_proxy": {
+    "type": "string",
+    "description": "代理地址（可选）",
+    "default": "",
+    "hint": "如有需要，填写代理 URL"
+  },
+  "ehentai_http_backend": {
+    "type": "string",
+    "description": "HTTP 后端",
+    "default": "httpx",
+    "options": ["httpx", "curl_cffi"],
+    "hint": "支持 httpx 或 curl_cffi"
+  },
+  "ehentai_http3": {
+    "type": "bool",
+    "description": "优先使用 HTTP/3（仅 curl_cffi 后端）",
+    "default": true
+  },
+  "ehentai_desktop_site": {
+    "type": "bool",
+    "description": "使用桌面站风格 UA",
+    "default": false,
+    "hint": "默认关闭，使用移动站策略"
+  },
+  "ehentai_impersonate": {
+    "type": "string",
+    "description": "浏览器指纹（curl_cffi 后端）",
+    "default": "chrome124",
+    "hint": "例如 chrome124"
+  },
+  "ehentai_enable_direct_ip": {
+    "type": "bool",
+    "description": "启用直连 IP 方案",
+    "default": true,
+    "hint": "EhViewer_CN_SXJ 方案，用于绕过网络限制"
+  },
+  "ehentai_curl_cffi_skip_on_error": {
+    "type": "bool",
+    "description": "curl_cffi 搜索失败时立即降级到 httpx",
+    "default": true
+  },
+  "ehentai_stream_upload_first": {
+    "type": "bool",
+    "description": "优先使用流式上传",
+    "default": true
+  },
+  "ehentai_stream_chunk_size": {
+    "type": "int",
+    "description": "流式上传分片大小（字节）",
+    "default": 262144
+  },
+  "ehentai_upload_to_group_file": {
+    "type": "bool",
+    "description": "尝试上传到群文件",
+    "default": false,
+    "hint": "如果 NapCat 不稳定，建议关闭"
+  },
+  "ehentai_prefer_r2_over_group_file": {
+    "type": "bool",
+    "description": "如果 R2 可用，优先使用 R2",
+    "default": true
+  },
+  "ehentai_search_f_cats": {
+    "type": "int",
+    "description": "搜索分类过滤（f_cats）",
+    "default": 0
+  },
+  "ehentai_search_advsearch": {
+    "type": "bool",
+    "description": "启用高级搜索",
+    "default": false
+  },
+  "r2_config": {
+    "type": "object",
+    "description": "Cloudflare R2 配置",
+    "visible": true,
+    "items": {
+      "ehentai_r2_enabled": {
+        "type": "bool",
+        "description": "启用 R2 上传",
+        "default": false
+      },
+      "ehentai_r2_access_key_id": {
+        "type": "string",
+        "description": "R2 Access Key ID",
+        "default": ""
+      },
+      "ehentai_r2_secret_access_key": {
+        "type": "string",
+        "description": "R2 Secret Access Key",
+        "default": ""
+      },
+      "ehentai_r2_bucket_name": {
+        "type": "string",
+        "description": "R2 Bucket 名称",
+        "default": "ehentai"
+      },
+      "ehentai_r2_endpoint": {
+        "type": "string",
+        "description": "R2 Endpoint",
+        "default": "https://xxx.r2.cloudflarestorage.com"
+      },
+      "ehentai_r2_public_domain": {
+        "type": "string",
+        "description": "R2 公开域名",
+        "default": "https://pub-xxx.r2.dev",
+        "hint": "用于生成公开可分享链接"
+      },
+      "ehentai_r2_max_total_size_mb": {
+        "type": "int",
+        "description": "R2 最大总容量（MB）",
+        "default": 3072
+      },
+      "ehentai_r2_file_retention_hours": {
+        "type": "int",
+        "description": "R2 文件保留时长（小时）",
+        "default": 24
+      }
+    }
+  },
+  "d1_config": {
+    "type": "object",
+    "description": "Cloudflare D1 数据库配置",
+    "visible": true,
+    "items": {
+      "ehentai_d1_enabled": {
+        "type": "bool",
+        "description": "启用 D1 数据库",
+        "default": false
+      },
+      "ehentai_d1_account_id": {
+        "type": "string",
+        "description": "Cloudflare Account ID",
+        "default": "",
+        "hint": "如为空，尝试从 R2 Endpoint 自动提取"
+      },
+      "ehentai_d1_database_id": {
+        "type": "string",
+        "description": "D1 Database ID",
+        "default": ""
+      },
+      "ehentai_d1_api_token": {
+        "type": "string",
+        "description": "D1 API Token",
+        "default": "",
+        "hint": "需要有 D1 编辑权限的令牌"
+      }
+    }
+  },
+  "cleanup_config": {
+    "type": "object",
+    "description": "自动清理配置",
+    "visible": true,
+    "items": {
+      "ehentai_auto_cleanup_local": {
+        "type": "bool",
+        "description": "启用每日自动清理本地缓存",
+        "default": true
+      },
+      "ehentai_auto_cleanup_time": {
+        "type": "string",
+        "description": "定时清理时间（24小时制）",
+        "default": "03:00",
+        "hint": "格式: HH:MM"
+      }
+    }
+  }
+}

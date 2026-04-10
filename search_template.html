@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Hentai Search Result UI</title>
+    <style>
+        :root {
+            --ef-yellow: #fff100;
+            --ef-dark: #222222;
+            --ef-gray-light: #efefef;
+            --ef-gray-mid: #d0d0d0;
+            --ef-gray-text: #a0a0a0;
+            --ef-gray-deep: #6f6f6f;
+            --ef-white: #ffffff;
+            --font-mono: 'Courier New', Courier, monospace;
+            --font-sans: 'Helvetica Neue', Helvetica, Arial, 'Microsoft YaHei', sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 36px 16px 48px;
+            font-family: var(--font-sans);
+        }
+
+        .ef-shell {
+            width: min(1200px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .ef-panel {
+            position: relative;
+            width: 100%;
+            background-color: var(--ef-gray-light);
+            overflow: hidden;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            background-image:
+                linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .ef-summary-panel {
+            min-height: 220px;
+            padding: 28px 36px 28px 48px;
+        }
+
+        .ef-result-card {
+            min-height: 270px;
+            padding: 28px 36px 24px 48px;
+        }
+
+        .ef-left-bar {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 16px;
+            background-color: var(--ef-yellow);
+            z-index: 10;
+        }
+
+        .ef-bg-watermark {
+            position: absolute;
+            top: 18px;
+            right: 28px;
+            font-size: clamp(88px, 10vw, 160px);
+            font-weight: 900;
+            color: transparent;
+            letter-spacing: -3px;
+            user-select: none;
+            z-index: 1;
+            background: linear-gradient(180deg, var(--ef-gray-mid) 0%, var(--ef-gray-mid) 42%, transparent 42%, transparent 50%, var(--ef-gray-mid) 50%, var(--ef-gray-mid) 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-stroke: 2px var(--ef-gray-mid);
+            opacity: 0.72;
+        }
+
+        .ef-bg-watermark-result {
+            top: 22px;
+            font-size: clamp(72px, 8vw, 128px);
+        }
+
+        .ef-top-nav {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 5;
+            margin-bottom: 22px;
+        }
+
+        .ef-tiny-square {
+            width: 6px;
+            height: 12px;
+            background-color: var(--ef-yellow);
+        }
+
+        .ef-top-nav span {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ef-gray-text);
+            letter-spacing: 1px;
+        }
+
+        .ef-summary-head {
+            position: relative;
+            z-index: 5;
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+            gap: 28px;
+            align-items: start;
+        }
+
+        .ef-summary-title {
+            max-width: 720px;
+            padding: 14px 18px 14px 12px;
+            background: var(--ef-white);
+            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .ef-icon-data {
+            width: 44px;
+            height: 44px;
+            background-color: #3b3c36;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex: 0 0 auto;
+        }
+
+        .ef-title-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .ef-summary-title-text,
+        .ef-title-text {
+            color: var(--ef-dark);
+            font-weight: 900;
+            letter-spacing: 1px;
+            line-height: 1.2;
+        }
+
+        .ef-summary-title-text {
+            font-size: 30px;
+        }
+
+        .ef-summary-subtitle,
+        .ef-subtitle-text,
+        .ef-url,
+        .ef-note-text {
+            color: var(--ef-gray-deep);
+            line-height: 1.35;
+        }
+
+        .ef-summary-subtitle {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .ef-summary-meta {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .ef-metric-box {
+            position: relative;
+            z-index: 5;
+            min-height: 72px;
+            padding: 12px 14px;
+            border: 1px solid var(--ef-gray-mid);
+            background: rgba(255, 255, 255, 0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .ef-metric-label,
+        .ef-meta-label,
+        .ef-tag-label {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--ef-gray-text);
+        }
+
+        .ef-metric-value,
+        .ef-meta-value {
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--ef-dark);
+            line-height: 1.1;
+            word-break: break-word;
+        }
+
+        .ef-results-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .ef-result-content {
+            position: relative;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .ef-result-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+            gap: 24px;
+            align-items: start;
+        }
+
+        .ef-result-main {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .ef-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .ef-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.74);
+            border: 1px solid var(--ef-gray-mid);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ef-dark);
+            letter-spacing: 0.8px;
+        }
+
+        .ef-title-text {
+            font-size: 28px;
+        }
+
+        .ef-subtitle-text {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .ef-url {
+            font-size: 13px;
+            font-family: var(--font-mono);
+            word-break: break-all;
+        }
+
+        .ef-side-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .ef-side-box {
+            min-height: 72px;
+            padding: 12px 14px;
+            background: var(--ef-white);
+            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .ef-cover-img {
+            width: 100%;
+            display: block;
+            object-fit: cover;
+            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .ef-meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .ef-meta-box {
+            min-height: 86px;
+            padding: 12px 14px;
+            border-top: 2px solid var(--ef-dark);
+            background: rgba(255, 255, 255, 0.54);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .ef-note-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+            align-items: start;
+            padding-top: 2px;
+        }
+
+        .ef-note-text {
+            font-size: 14px;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .ef-tag-box {
+            min-height: 52px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.64);
+        }
+
+        .ef-footer-rule {
+            height: 10px;
+            background-image: repeating-linear-gradient(
+                to right,
+                #ffffff,
+                #ffffff 12px,
+                var(--ef-gray-mid) 12px,
+                var(--ef-gray-mid) 20px
+            );
+        }
+
+        @media (max-width: 980px) {
+            .ef-summary-head,
+            .ef-result-head {
+                grid-template-columns: 1fr;
+            }
+
+            .ef-summary-meta,
+            .ef-meta-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .ef-bg-watermark {
+                right: 12px;
+            }
+        }
+
+        @media (max-width: 720px) {
+            body {
+                padding: 20px 10px 32px;
+            }
+
+            .ef-summary-panel,
+            .ef-result-card {
+                padding: 20px 18px 18px 30px;
+            }
+
+            .ef-summary-title {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .ef-summary-meta,
+            .ef-meta-grid,
+            .ef-note-row {
+                grid-template-columns: 1fr;
+            }
+
+            .ef-summary-title-text,
+            .ef-title-text {
+                font-size: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="ef-shell">
+        <section class="ef-panel ef-summary-panel">
+            <div class="ef-left-bar"></div>
+            <div class="ef-bg-watermark">SEARCH</div>
+
+            <div class="ef-top-nav">
+                <div class="ef-tiny-square"></div>
+                <span>E-HENTAI // SEARCH FEED // {{keyword}}</span>
+            </div>
+
+            <div class="ef-summary-head">
+                <div class="ef-summary-title">
+                    <div class="ef-icon-data">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 2H16L22 8V20C22 21.1 21.1 22 20 22H4C2.9 22 2 21.1 2 20V4C2 2.9 2.9 2 4 2Z" stroke="#FFF" stroke-width="2"/>
+                            <rect x="6" y="12" width="12" height="10" fill="#FFF"/>
+                            <path d="M6 2V8H14V2" fill="#FFF"/>
+                            <rect x="8" y="15" width="8" height="2" fill="#3B3C36"/>
+                            <rect x="8" y="18" width="5" height="2" fill="#3B3C36"/>
+                        </svg>
+                    </div>
+                    <div class="ef-title-copy">
+                        <h1 class="ef-summary-title-text">"{{keyword}}" 搜索结果总览</h1>
+                        <p class="ef-summary-subtitle">Powered by Lilac-Bot</p>
+                    </div>
+                </div>
+
+                <div class="ef-summary-meta">
+                    <div class="ef-metric-box">
+                        <span class="ef-metric-label">TOTAL COUNT</span>
+                        <span class="ef-metric-value">{{total_count}}</span>
+                    </div>
+                    <div class="ef-metric-box">
+                        <span class="ef-metric-label">DISPLAY COUNT</span>
+                        <span class="ef-metric-value">{{display_count}}</span>
+                    </div>
+                    <div class="ef-metric-box">
+                        <span class="ef-metric-label">SCHEMA</span>
+                        <span class="ef-metric-value">{{schema_version}}</span>
+                    </div>
+                    <div class="ef-metric-box">
+                        <span class="ef-metric-label">GENERATED AT</span>
+                        <span class="ef-metric-value">{{generated_at}}</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="ef-results-stack">
+            <!-- {{#items}} -->
+            <article class="ef-panel ef-result-card">
+                <div class="ef-left-bar"></div>
+                <div class="ef-bg-watermark ef-bg-watermark-result">RESULT {{index}}</div>
+
+                <div class="ef-result-content">
+                    <div class="ef-top-nav">
+                        <div class="ef-tiny-square"></div>
+                        <span>ITEM {{index}} // {{category}} // GID {{gid}}</span>
+                    </div>
+
+                    <div class="ef-result-head">
+                        <div class="ef-result-main">
+                            <div class="ef-chip-row">
+                                <span class="ef-pill">PAGES {{pages}}</span>
+                            </div>
+
+                            <h2 class="ef-title-text">{{title}}</h2>
+                            <p class="ef-subtitle-text">{{title_jpn}}</p>
+                            <p class="ef-url">{{url}}</p>
+                        </div>
+
+                        <aside class="ef-side-column">
+                            <img class="ef-cover-img" src="{{cover_url}}" alt="{{title}}">
+                        </aside>
+                    </div>
+
+                    <div class="ef-meta-grid">
+                        <div class="ef-meta-box">
+                            <span class="ef-meta-label">UPLOADER</span>
+                            <span class="ef-meta-value">{{uploader}}</span>
+                        </div>
+                        <div class="ef-meta-box">
+                            <span class="ef-meta-label">POSTED</span>
+                            <span class="ef-meta-value">{{posted}}</span>
+                        </div>
+                        <div class="ef-meta-box">
+                            <span class="ef-meta-label">RATING</span>
+                            <span class="ef-meta-value">{{rating}}</span>
+                        </div>
+                        <div class="ef-meta-box">
+                            <span class="ef-meta-label">CATEGORY</span>
+                            <span class="ef-meta-value">{{category}}</span>
+                        </div>
+                    </div>
+
+                    <div class="ef-note-row">
+                        <div class="ef-tag-box">
+                            <span class="ef-tag-label">TAGS</span>
+                            <p class="ef-note-text">{{tags}}</p>
+                        </div>
+                    </div>
+
+                    <div class="ef-footer-rule"></div>
+                </div>
+            </article>
+            <!-- {{/items}} -->
+        </section>
+    </main>
+</body>
+</html>
