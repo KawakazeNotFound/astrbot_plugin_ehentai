@@ -105,6 +105,9 @@ class EHentaiPlugin(Star):
         logger = get_logger()
         
         raw = event.message_str.strip()
+        # 移除命令前缀 "search "
+        if raw.startswith("search "):
+            raw = raw[7:]  # len("search ") = 7
         logger.info(f"[搜索处理] 开始处理搜索请求: raw='{raw}'")
         
         # 解析 --page N 参数
