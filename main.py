@@ -23,7 +23,7 @@ from astrbot.api.event import MessageChain
 
 from .config_loader import PluginConfig
 from .logger_compat import init_logger, get_logger
-from .service import EHentaiClient, SearchOptions
+from .service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT
 from .search_logic import (
     SearchExecutionError,
     execute_gallery_search,
@@ -69,6 +69,7 @@ class EHentaiPlugin(Star):
             ipb_pass_hash=self.plugin_config.ehentai_ipb_pass_hash,
             igneous=self.plugin_config.ehentai_igneous,
             cf_clearance=self.plugin_config.ehentai_cf_clearance,
+            user_agent=CHROME_DESKTOP_USER_AGENT,
             timeout=self.plugin_config.ehentai_timeout,
             proxy=self.plugin_config.ehentai_proxy,
             backend=self.plugin_config.ehentai_http_backend,
