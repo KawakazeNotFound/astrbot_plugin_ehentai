@@ -6,7 +6,13 @@ class PluginConfig:
     """插件配置容器"""
     
     def __init__(self, config_dict: Dict[str, Any]):
-        self._config = config_dict
+        self._config = {}
+        for k, v in config_dict.items():
+            if isinstance(v, dict):
+                for sub_k, sub_v in v.items():
+                    self._config[sub_k] = sub_v
+            else:
+                self._config[k] = v
     
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值"""

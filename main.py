@@ -277,6 +277,8 @@ class EHentaiPlugin(Star):
         # 获取 R2 管理器
         file_size_mb = file_path.stat().st_size / 1024 / 1024
         r2_manager = get_r2_manager()
+        if r2_manager is None:
+            r2_manager = await init_r2_manager(self.plugin_config)
         
         # 尝试上传到 R2
         if r2_manager and r2_manager.is_available:
@@ -297,6 +299,8 @@ class EHentaiPlugin(Star):
                     
                     # 记录 D1
                     d1_manager = get_d1_manager()
+                    if d1_manager is None:
+                        d1_manager = await init_d1_manager(self.plugin_config)
                     if d1_manager:
                         try:
                             sender_id = event.message_obj.sender.user_id if event.message_obj.sender else "unknown"
