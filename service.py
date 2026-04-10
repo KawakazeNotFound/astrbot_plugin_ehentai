@@ -866,14 +866,15 @@ class EHentaiClient:
     async def _search_via_worker(
         self, keyword: str, limit: int, options: Optional[SearchOptions], eh_page: int
     ) -> list[GalleryResult]:
-        """使用 Cloudflare Worker 搜索"""
+        """使用 Cloudflare Worker 搜索（将 Worker 仅作为网络代理，本地解析 HTML）"""
         logger.debug(f"[Worker搜索] 准备请求 Worker: {self.cloudflare_worker_url}")
         
-        # 构造请求体
+        # 构造请求体，申请获取 raw HTML
         payload = {
             "keyword": keyword,
             "page": eh_page,
-            "baseUrl": self.base_url,  # 传入基础 URL，支持 E-Hentai 和 ExHentai
+            "baseUrl": self.base_url,
+            "rawHtml": True  # 请求 Worker 返回原始 HTML 以便利用本地完整的解析器（评分、标签、缩略图等）
         }
         
         # 如果有 cookies，也传给 Worker
@@ -910,46 +911,41 @@ class EHentaiClient:
             
             # 解析 JSON 响应
             data = resp.json()
-            logger.debug(f"[Worker搜索] Worker 响应: success={data.get('success')}, count={data.get('count')}")
             
             if not data.get("success"):
-                logger.error(f"[Worker搜索] Worker 返回失败响应")
+                logger.error(f"[Worker搜索] Worker 返回失败响应: {data.get('error', '未知错误')}")
                 raise RuntimeError("Worker 搜索失败")
+                
+            # 获取 HTML 文本并使用自带的本地解析器
+            raw_html = data.get("html", "")
+            if not raw_html:
+                # 兼容旧版 Worker，不包含原始 html
+                logger.warning("[Worker搜索] 未获得 raw HTML，尝试兼容模式（可能会丢失如标签、上传者等字段）")
+                results: list[GalleryResult] = []
+                worker_results = data.get("results", [])
+                for idx, item in enumerate(worker_results[:limit]):
+                    try:
+                        gid = str(item.get("gid", ""))
+                        token = str(item.get("token", ""))
+                        title = str(item.get("title", ""))
+                        url = str(item.get("url", ""))
+                        category = str(item.get("category", ""))
+                        rating = item.get("rating", -1)
+                        cover_url = str(item.get("cover_url", ""))
+                        if not gid or not token: continue
+                        result = GalleryResult(
+                            gid=gid, token=token, title=title, url=url,
+                            category=category, rating=rating, cover_url=cover_url
+                        )
+                        results.append(result)
+                    except Exception: pass
+                return results
+
+            logger.debug(f"[Worker搜索] 成功获取 HTML (大小: {len(raw_html)} 字节)，开始本地解析详尽元数据...")
             
-            # 从 Worker 响应转换为 GalleryResult 列表
-            results: list[GalleryResult] = []
-            worker_results = data.get("results", [])
-            
-            for idx, item in enumerate(worker_results[:limit]):
-                try:
-                    gid = str(item.get("gid", ""))
-                    token = str(item.get("token", ""))
-                    title = str(item.get("title", ""))
-                    url = str(item.get("url", ""))
-                    category = str(item.get("category", ""))
-                    rating = item.get("rating", -1)
-                    cover_url = str(item.get("cover_url", ""))
-                    
-                    if not gid or not token:
-                        logger.warning(f"[Worker搜索] 第 {idx+1} 项缺少 gid 或 token，跳过")
-                        continue
-                    
-                    result = GalleryResult(
-                        gid=gid,
-                        token=token,
-                        title=title,
-                        url=url,
-                        category=category,
-                        rating=rating,
-                        cover_url=cover_url,
-                    )
-                    results.append(result)
-                    logger.debug(f"[Worker搜索] 第 {idx+1} 项: gid={gid}, title={title}, cover={cover_url[:50] if cover_url else 'N/A'}")
-                except Exception as e:
-                    logger.warning(f"[Worker搜索] 解析第 {idx+1} 项时出错: {e}")
-                    continue
-            
-            logger.info(f"[Worker搜索] 成功从 Worker 解析出 {len(results)} 条结果")
+            # 本地解析，能获取到完整的 缩略图、评分、发布时间、上传者、标签等
+            results = self._parse_search_results(raw_html, limit)
+            logger.info(f"[Worker搜索] 成功从 HTML 解析出 {len(results)} 条完整结果")
             return results
             
         except httpx.RequestError as e:

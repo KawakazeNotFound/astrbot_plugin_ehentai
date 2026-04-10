@@ -12,7 +12,7 @@ export default {
     
     // 解析请求体
     const body = await request.json();
-    const { keyword, page = 1, cookies = '', debug = false, baseUrl = 'https://e-hentai.org' } = body;
+    const { keyword, page = 1, cookies = '', debug = false, baseUrl = 'https://e-hentai.org', rawHtml = false } = body;
     
     if (!keyword) {
       return new Response(JSON.stringify({ error: 'Missing keyword' }), { status: 400 });
@@ -57,7 +57,11 @@ export default {
       }
       
       // 调试模式：返回 HTML 片段和解析统计
-      if (debug) {
+      if (debug === 'full') {
+        return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+      }
+      
+      if (debug === true || debug === 'true') {
         const results = parseSearchResults(html);
         const galleryPattern = /\/g\/(\d+)\/([a-f0-9]+)\//gi;
         const galleryMatches = html.match(galleryPattern) || [];
@@ -99,6 +103,16 @@ export default {
         });
       }
       
+      // 如果请求纯 HTML（推荐方法，让客户端自行解析所有元数据）
+      if (rawHtml) {
+        return new Response(JSON.stringify({
+          success: true,
+          html: html
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      
       // 解析 HTML（提取搜索结果）
       const results = parseSearchResults(html, baseUrl);
       
@@ -106,6 +120,7 @@ export default {
         success: true,
         count: results.length,
         results: results,
+        html: debug ? html : undefined // 如果需要，也可以返回原始 HTML
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
