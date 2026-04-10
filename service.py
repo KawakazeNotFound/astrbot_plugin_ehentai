@@ -877,14 +877,16 @@ class EHentaiClient:
         }
         
         # 如果有 cookies，也传给 Worker
-        if self.cookie:
-            payload["cookies"] = self.cookie
-            logger.debug(f"[Worker搜索] 使用自定义 Cookie (长度: {len(self.cookie)} 字符)")
+        # 使用 _build_cookie_header() 获取完整的 Cookie 字符串
+        cookie_header = self._build_cookie_header(self.base_url)
+        if cookie_header:
+            payload["cookies"] = cookie_header
+            logger.debug(f"[Worker搜索] 使用自定义 Cookie (长度: {len(cookie_header)} 字符)")
         
         # 构造请求头
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": self.user_agent,
+            "User-Agent": self.headers.get("User-Agent", "Mozilla/5.0"),
         }
         
         try:
