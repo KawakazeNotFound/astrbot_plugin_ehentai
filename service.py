@@ -927,7 +927,8 @@ class EHentaiClient:
                     title = str(item.get("title", ""))
                     url = str(item.get("url", ""))
                     category = str(item.get("category", ""))
-                    rating = item.get("rating", 0)
+                    rating = item.get("rating", -1)
+                    cover_url = str(item.get("cover_url", ""))
                     
                     if not gid or not token:
                         logger.warning(f"[Worker搜索] 第 {idx+1} 项缺少 gid 或 token，跳过")
@@ -940,9 +941,10 @@ class EHentaiClient:
                         url=url,
                         category=category,
                         rating=rating,
+                        cover_url=cover_url,
                     )
                     results.append(result)
-                    logger.debug(f"[Worker搜索] 第 {idx+1} 项: gid={gid}, title={title}")
+                    logger.debug(f"[Worker搜索] 第 {idx+1} 项: gid={gid}, title={title}, cover={cover_url[:50] if cover_url else 'N/A'}")
                 except Exception as e:
                     logger.warning(f"[Worker搜索] 解析第 {idx+1} 项时出错: {e}")
                     continue

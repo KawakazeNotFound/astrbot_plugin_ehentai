@@ -100,7 +100,7 @@ export default {
       }
       
       // 解析 HTML（提取搜索结果）
-      const results = parseSearchResults(html);
+      const results = parseSearchResults(html, baseUrl);
       
       return new Response(JSON.stringify({
         success: true,
@@ -122,7 +122,7 @@ export default {
 };
 
 // 解析搜索结果的辅助函数
-function parseSearchResults(html) {
+function parseSearchResults(html, baseUrl = 'https://e-hentai.org') {
   const results = [];
   
   // 方式 1: 寻找 JavaScript 中 gid_list 的数据结构（最准确）
@@ -132,13 +132,20 @@ function parseSearchResults(html) {
       const items = eval('[' + gidListMatch[1] + ']');
       for (const item of items) {
         if (Array.isArray(item) && item.length >= 3) {
+          // 从 gid_list 中 item 结构: [gid, token, title, category, rating, ...]
+          // 需要从 HTML 中找到对应的行来提取缩略图
+          const gid = String(item[0]);
+          const token = String(item[1]);
+          const coverUrl = extractCoverUrlFromHtml(html, gid, token, baseUrl);
+          
           results.push({
-            gid: String(item[0]),
-            token: String(item[1]),
+            gid,
+            token,
             title: cleanTitle(item[2] || ''),
             category: item[3] ? cleanCategory(item[3]) : '',
             rating: typeof item[4] === 'number' ? item[4] : -1,
-            url: `https://e-hentai.org/g/${item[0]}/${item[1]}/`,
+            url: `${baseUrl}/g/${gid}/${token}/`,
+            cover_url: coverUrl,
           });
         }
       }
@@ -168,13 +175,17 @@ function parseSearchResults(html) {
     // 跳过空标题
     if (!title) continue;
     
+    // 从 HTML 中提取该行的缩略图
+    const coverUrl = extractCoverUrlFromHtml(html, gid, token, baseUrl);
+    
     results.push({
       gid,
       token,
       title,
       category: '',
       rating: -1,
-      url: `https://exhentai.org/g/${gid}/${token}/`,
+      url: `${baseUrl}/g/${gid}/${token}/`,
+      cover_url: coverUrl,
     });
   }
   
@@ -194,13 +205,17 @@ function parseSearchResults(html) {
     
     if (!title) continue;
     
+    // 从 HTML 中提取该行的缩略图
+    const coverUrl = extractCoverUrlFromHtml(html, gid, token, baseUrl);
+    
     results.push({
       gid,
       token,
       title,
       category: '',
       rating: -1,
-      url: `https://exhentai.org/g/${gid}/${token}/`,
+      url: `${baseUrl}/g/${gid}/${token}/`,
+      cover_url: coverUrl,
     });
   }
   
@@ -231,13 +246,17 @@ function parseSearchResults(html) {
       
       if (title === '(无标题)') continue;
       
+      // 从该行提取缩略图
+      const coverUrl = extractCoverUrlFromHtml(html, gid, token, baseUrl);
+      
       results.push({
         gid,
         token,
         title,
         category: '',
         rating: -1,
-        url: `https://e-hentai.org/g/${gid}/${token}/`,
+        url: `${baseUrl}/g/${gid}/${token}/`,
+        cover_url: coverUrl,
       });
     }
   }
@@ -299,4 +318,69 @@ function cleanCategory(category) {
     .replace(/&#39;/gi, "'")
     .replace(/\s+/g, ' ') // 合并多个空格
     .trim();
+}
+
+// 从 HTML 中提取特定 gid/token 的缩略图 URL
+function extractCoverUrlFromHtml(html, gid, token, baseUrl = 'https://e-hentai.org') {
+  try {
+    // 构建该画廊的链接模式
+    const galleryHref = `/g/${gid}/${token}/`;
+    
+    // 在 HTML 中找到包含该链接的块（通常是一行或一个容器）
+    // 使用更大的上下文来查找 <img> 标签
+    // 从 href 开始，向前和向后搜索一定的字符范围
+    const hrefIndex = html.indexOf(galleryHref);
+    if (hrefIndex === -1) return '';
+    
+    // 向前搜索最近的 <tr> 或 <div> 的开始（回溯到上一个 < 字符）
+    let rowStart = hrefIndex;
+    for (let i = hrefIndex; i >= 0; i--) {
+      if (html[i] === '<') {
+        // 检查是否是 <tr 或 <div 或其他容器
+        const nextPart = html.substring(i, i + 100);
+        if (nextPart.match(/^<(?:tr|div|table|section|article)/i)) {
+          rowStart = i;
+          break;
+        }
+      }
+    }
+    
+    // 向后搜索该行的结束（</tr> 或 </div> 等）
+    let rowEnd = html.indexOf('</tr>', hrefIndex);
+    if (rowEnd === -1) {
+      rowEnd = html.indexOf('</div>', hrefIndex);
+    }
+    if (rowEnd === -1) {
+      rowEnd = Math.min(hrefIndex + 2000, html.length); // 默认向后搜索 2000 字符
+    } else {
+      rowEnd += 6; // 包含 </tr> 或 </div>
+    }
+    
+    const rowHtml = html.substring(rowStart, rowEnd);
+    
+    // 查找 <img> 标签的 src 或 data-src
+    const imgMatch = rowHtml.match(/<img[^>]*(?:src|data-src)=["']([^"']+)["'][^>]*>/i);
+    if (imgMatch && imgMatch[1]) {
+      let url = imgMatch[1];
+      
+      // 过滤掉 base64 数据 URI
+      if (url.startsWith('data:')) {
+        return '';
+      }
+      
+      // 完善相对 URL
+      if (url.startsWith('//')) {
+        url = 'https:' + url;
+      } else if (url.startsWith('/')) {
+        url = baseUrl + url;
+      }
+      
+      return url;
+    }
+    
+    return '';
+  } catch (e) {
+    console.error('Error extracting cover URL:', e);
+    return '';
+  }
 }
