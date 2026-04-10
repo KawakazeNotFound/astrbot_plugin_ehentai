@@ -15,7 +15,7 @@ from typing import Optional
 
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star
-from astrbot.api import logger as astrbot_logger
+from astrbot.api import logger as astrbot_logger, AstrBotConfig
 from astrbot.api.message_components import (
     Plain, Image, At, File
 )
@@ -39,14 +39,14 @@ from .d1 import init_d1_manager, get_d1_manager
 class EHentaiPlugin(Star):
     """E-Hentai 搜索下载插件"""
     
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         
         # 初始化 logger
         init_logger(astrbot_logger)
         
         # 获取插件配置
-        self.plugin_config = PluginConfig(self.context.config_data or {})
+        self.plugin_config = PluginConfig(config or {})
         
         # 记录日志
         get_logger().info("[E-Hentai插件] 插件已初始化")
