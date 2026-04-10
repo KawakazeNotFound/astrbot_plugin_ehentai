@@ -937,10 +937,9 @@ class EHentaiClient:
                         gid=gid,
                         token=token,
                         title=title,
+                        url=url,
                         category=category,
                         rating=rating,
-                        posted=0,
-                        link=url,
                     )
                     results.append(result)
                     logger.debug(f"[Worker搜索] 第 {idx+1} 项: gid={gid}, title={title}")
