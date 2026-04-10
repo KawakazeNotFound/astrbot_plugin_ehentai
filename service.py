@@ -662,6 +662,10 @@ class EHentaiClient:
         3. 遍历行/块元素
         4. 按官方顺序提取所有字段
         5. 去重并限制数量
+        
+        支持两种布局：
+        - 旧版 table 布局：.gdt 元素作为行
+        - 新版 grid 布局：.gl1t 元素作为结果项
         """
         soup = BeautifulSoup(body, "html.parser")
         
@@ -676,16 +680,28 @@ class EHentaiClient:
             logger.warning("[搜索解析] 未找到 .itg 容器")
             return []
 
-        # Step 3: 遍历行/块，支持 table 和 div 两种布局（对标官方）
+        # Step 3: 遍历行/块，支持 table/旧div(.gdt) 和新div(.gl1t) 三种布局
+        nodes = []
         if itg.name and itg.name.lower() == "table":
+            # table 布局：跳过表头
             nodes = itg.select("tr")
-            # 跳过表头行（官方自动处理，Python 需手动跳过）
             nodes = nodes[1:] if len(nodes) > 1 else []
             logger.debug(f"[搜索解析] 容器类型=table, 候选行数={len(nodes)}")
         else:
-            # div 模式：只取第一级子元素
-            nodes = [child for child in itg.find_all(recursive=False) if getattr(child, "name", None)]
-            logger.debug(f"[搜索解析] 容器类型={itg.name}, 候选块数={len(nodes)}")
+            # div 布局：先尝试旧的 .gdt + 新的 .gl1t 格式
+            gdt_nodes = itg.select(".gdt")  # 旧版单行布局
+            gl1t_nodes = itg.select(".gl1t")  # 新版网格布局
+            
+            if gdt_nodes:
+                nodes = gdt_nodes
+                logger.debug(f"[搜索解析] 使用旧版 .gdt 布局，候选行数={len(nodes)}")
+            elif gl1t_nodes:
+                nodes = gl1t_nodes
+                logger.debug(f"[搜索解析] 使用新版 .gl1t 网格布局，候选项数={len(nodes)}")
+            else:
+                # 如果都没找到，尝试取第一级子元素
+                nodes = [child for child in itg.find_all(recursive=False) if getattr(child, "name", None)]
+                logger.debug(f"[搜索解析] 使用第一级子元素，候选块数={len(nodes)}")
 
         results: list[GalleryResult] = []
         seen: set[str] = set()
@@ -693,11 +709,20 @@ class EHentaiClient:
         # Step 4: 循环解析每一行/块（对标官方 parse_gallery_info）
         for idx, row in enumerate(nodes, 1):
             # 4.1: 获取标题链接（对标官方的三层备选方案）
-            glname = row.select_one(".glname")
-            title_anchor = glname.select_one("a[href]") if glname else None
-
+            # 兼容两种布局：
+            # - 旧版：glname 在 row 内，链接在 glname 内
+            # - 新版：glname 被包在链接内 <a><div class="glname">...</div></a>
+            
+            title_anchor = None
+            
+            # 先尝试新版布局：直接查找 <a href...> 包含 /g/
+            title_anchor = row.select_one("a[href*='/g/'], a[href*='/mpv/']")
+            
             if not title_anchor:
-                title_anchor = row.select_one("a[href*='/g/'], a[href*='/mpv/']")
+                # 尝试旧版布局：在 .glname 内查找 <a>
+                glname = row.select_one(".glname")
+                if glname:
+                    title_anchor = glname.select_one("a[href]")
 
             if not title_anchor:
                 for link in row.find_all("a", href=True):
@@ -710,10 +735,10 @@ class EHentaiClient:
                 logger.debug(f"[搜索解析] 第 {idx} 行: 未找到标题链接")
                 continue
             
-            # 4.2: 提取标题
+            # 4.2: 提取标题和链接
             href_raw = title_anchor.get("href", "").strip()
-            title_node = row.select_one(".glink")
-            title = title_node.get_text(" ", strip=True) if title_node else title_anchor.get_text(" ", strip=True)
+            # 标题来自链接元素本身的文本（新版）或其子元素（旧版）
+            title = title_anchor.get_text(" ", strip=True)
             
             if not href_raw or not title:
                 logger.debug(f"[搜索解析] 第 {idx} 行: 标题或链接为空")

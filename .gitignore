@@ -47,3 +47,6 @@ secrets.json
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.DS_Store
+/2Agent
+2Agent/
