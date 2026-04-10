@@ -12,7 +12,7 @@ export default {
     
     // 解析请求体
     const body = await request.json();
-    const { keyword, page = 1, cookies = '', debug = false, baseUrl = 'https://e-hentai.org', rawHtml = false } = body;
+    const { keyword, page = 0, cookies = '', debug = false, baseUrl = 'https://e-hentai.org', rawHtml = false } = body;
     
     if (!keyword) {
       return new Response(JSON.stringify({ error: 'Missing keyword' }), { status: 400 });
@@ -22,7 +22,7 @@ export default {
       // 构建搜索 URL - 支持自定义基础 URL（e-hentai.org 或 exhentai.org）
       const searchUrl = new URL(baseUrl + '/');
       searchUrl.searchParams.append('f_search', keyword);
-      if (page > 1) {
+      if (page > 0) {
         searchUrl.searchParams.append('page', page.toString());
       }
       
