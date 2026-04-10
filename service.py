@@ -863,6 +863,41 @@ class EHentaiClient:
             return True
         return False
 
+    class _FakeResponse:
+        def __init__(self, text: str, status_code: int):
+            self.text = text
+            self.status_code = status_code
+
+    async def _fetch_url_via_worker(self, url: str, method: str = "GET", data: Optional[dict] = None):
+        """通用代理方法：通过 Cloudflare Worker 获取 e-hentai URL（处理 archiver 等绕墙需求）"""
+        logger.debug(f"[Worker代理] 准备通过 Worker 获取 URL: {url} ({method})")
+        payload = {
+            "action": "fetch",
+            "fetchUrl": url,
+            "fetchMethod": method,
+        }
+        if data:
+            payload["fetchData"] = data
+            
+        cookie_header = self._build_cookie_header(self.base_url)
+        if cookie_header:
+            payload["cookies"] = cookie_header
+            
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": self.headers.get("User-Agent", "Mozilla/5.0"),
+        }
+        
+        async with httpx.AsyncClient(timeout=self.timeout, verify=False, follow_redirects=True) as client:
+            resp = await client.post(self.cloudflare_worker_url, json=payload, headers=headers)
+            resp.raise_for_status()
+            
+            result = resp.json()
+            if "error" in result:
+                raise RuntimeError(f"Worker Error: {result.get('error')}")
+                
+            return self._FakeResponse(result.get("html", ""), result.get("status", 200))
+
     async def _search_via_worker(
         self, keyword: str, limit: int, options: Optional[SearchOptions], eh_page: int
     ) -> list[GalleryResult]:
@@ -1102,14 +1137,26 @@ class EHentaiClient:
     async def _get_archive_page(self, client: httpx.AsyncClient, gid: str, token: str) -> str:
         archive_page_url = f"{self.base_url}/archiver.php?gid={gid}&token={token}"
         logger.debug(f"[存档] 获取存档页面: {archive_page_url}")
-        # 对于直连 IP，将主机名转换为 IP
-        request_url = self._get_request_url_for_direct_ip(archive_page_url) if self.enable_direct_ip else archive_page_url
-        logger.debug(f"[存档] 请求 URL: {request_url}, 直连模式: {self.enable_direct_ip}")
-        resp = await client.get(
-            request_url, headers=self._headers_for_url(archive_page_url)
-        )
+        
+        if self.cloudflare_worker_url:
+            logger.debug(f"[存档] 使用 Worker 获取存档页面")
+            try:
+                resp = await self._fetch_url_via_worker(archive_page_url, method="GET")
+            except Exception as error:
+                logger.error(f"[存档] Worker 代理请求失败: {error}")
+                raise
+        else:
+            # 对于直连 IP，将主机名转换为 IP
+            request_url = self._get_request_url_for_direct_ip(archive_page_url) if self.enable_direct_ip else archive_page_url
+            logger.debug(f"[存档] 请求 URL: {request_url}, 直连模式: {self.enable_direct_ip}")
+            resp = await client.get(
+                request_url, headers=self._headers_for_url(archive_page_url)
+            )
+        
         logger.debug(f"[存档] 获取存档页面响应: 状态码={resp.status_code}")
-        self._raise_for_response(resp)
+        if not self.cloudflare_worker_url:
+            self._raise_for_response(resp)
+            
         if self._is_login_required_page(resp.text):
             logger.error(f"[存档] 需要登录 Cookie 才能访问")
             raise RuntimeError("下载归档需要已登录的 E-Hentai/ExHentai Cookie")
@@ -1227,12 +1274,16 @@ class EHentaiClient:
                 payload["dlcheck"] = "Download Resample Archive"
 
         async def do_post() -> Optional[str]:
-            resp = await client.post(
-                request_url,
-                data=payload,
-                headers=self._headers_for_url(archive_url),
-            )
-            self._raise_for_response(resp)
+            if self.cloudflare_worker_url:
+                logger.debug(f"[存档] 使用 Worker 发送 POST")
+                resp = await self._fetch_url_via_worker(archive_url, method="POST", data=payload)
+            else:
+                resp = await client.post(
+                    request_url,
+                    data=payload,
+                    headers=self._headers_for_url(archive_url),
+                )
+                self._raise_for_response(resp)
 
             body = resp.text
             if NEED_HATH_CLIENT_MSG in body:

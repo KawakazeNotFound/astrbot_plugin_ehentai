@@ -186,6 +186,10 @@ class EHentaiPlugin(Star):
         
         raw_input = event.message_str.strip()
         
+        # 移除命令前缀 "download "
+        if raw_input.startswith("download "):
+            raw_input = raw_input[9:]
+        
         # 解析 -original 标志
         use_original = "-original" in raw_input
         keyword = raw_input.replace("-original", "").strip()

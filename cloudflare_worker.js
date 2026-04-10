@@ -12,30 +12,63 @@ export default {
     
     // 解析请求体
     const body = await request.json();
-    const { keyword, page = 0, cookies = '', debug = false, baseUrl = 'https://e-hentai.org', rawHtml = false } = body;
+    const { action = 'search', fetchUrl = '', fetchMethod = 'GET', fetchData = null, keyword = '', page = 0, cookies = '', debug = false, baseUrl = 'https://e-hentai.org', rawHtml = false } = body;
     
-    if (!keyword) {
-      return new Response(JSON.stringify({ error: 'Missing keyword' }), { status: 400 });
+    // 构建请求头
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Referer': baseUrl + '/',
+    };
+    
+    if (cookies) {
+      headers['Cookie'] = cookies;
     }
-    
+
     try {
+      if (action === 'fetch') {
+        if (!fetchUrl) {
+          return new Response(JSON.stringify({ error: 'Missing fetchUrl' }), { status: 400 });
+        }
+        
+        const fetchOptions = {
+          method: fetchMethod,
+          headers,
+          redirect: 'follow'
+        };
+        
+        if (fetchData && (fetchMethod === 'POST' || fetchMethod === 'PUT')) {
+          const form = new URLSearchParams();
+          for (const key in fetchData) {
+            form.append(key, fetchData[key]);
+          }
+          fetchOptions.body = form;
+          headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        }
+        
+        const response = await fetch(fetchUrl, fetchOptions);
+        const html = await response.text();
+        
+        return new Response(JSON.stringify({
+          success: true,
+          html: html,
+          status: response.status,
+          finalUrl: response.url
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!keyword) {
+        return new Response(JSON.stringify({ error: 'Missing keyword' }), { status: 400 });
+      }
+      
       // 构建搜索 URL - 支持自定义基础 URL（e-hentai.org 或 exhentai.org）
       const searchUrl = new URL(baseUrl + '/');
       searchUrl.searchParams.append('f_search', keyword);
       if (page > 0) {
         searchUrl.searchParams.append('page', page.toString());
-      }
-      
-      // 构建请求头
-      const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': baseUrl + '/',
-      };
-      
-      if (cookies) {
-        headers['Cookie'] = cookies;
       }
       
       // 请求 E-Hentai 或 ExHentai
