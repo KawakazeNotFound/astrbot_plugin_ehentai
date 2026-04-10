@@ -10,8 +10,8 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from nonebot.log import logger
 
+from .logger_compat import get_logger
 from .search_logic import build_search_render_payload
 
 _COVER_HEADERS = {
@@ -191,7 +191,7 @@ async def render_search_results_image(
                 success_count += 1
 
         if success_count < len(items):
-            logger.warning(
+            get_logger().warning(
                 "[搜索渲染] 封面内嵌完成 %d/%d，部分封面下载失败",
                 success_count,
                 len(items),
