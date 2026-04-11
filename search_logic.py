@@ -105,6 +105,15 @@ def build_search_render_payload(
     items: list[dict[str, object]] = []
     for index, gallery in enumerate(results[:display_count], start=1):
         rating = gallery.rating if gallery.rating >= 0 else 0.0
+
+        # 尝试从 tags 中提取语言
+        tags_list = [_normalize_text(tag) for tag in (gallery.tags or []) if _normalize_text(tag)]
+        language = "Unknown"
+        for tag in tags_list:
+            if tag.lower().startswith("language:"):
+                language = tag.split(":", 1)[1].strip().title()
+                break
+
         item = {
             "index": index,
             "gid": str(gallery.gid),
@@ -119,9 +128,10 @@ def build_search_render_payload(
             "posted": _normalize_text(gallery.posted),
             "pages": int(gallery.pages or 0),
             "rating": float(rating),
+            "language": language,
             "is_disowned": 1 if gallery.disowned else 0,
             "favorited": int(gallery.favorited),
-            "tags": [_normalize_text(tag) for tag in (gallery.tags or []) if _normalize_text(tag)],
+            "tags": tags_list,
         }
         items.append(item)
 
