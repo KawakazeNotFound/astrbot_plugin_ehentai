@@ -1,7 +1,7 @@
 """AstrBot E-Hentai 搜索下载插件"""
 
 __version__ = "0.0.1"
-__author__ = "EhViewer Contributors"
+__author__ = "KawakazeNotFound"
 
 from .main import EHentaiPlugin
 

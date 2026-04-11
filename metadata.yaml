@@ -2,8 +2,8 @@ name: astrbot_plugin_ehentai
 display_name: "E-Hentai 搜索下载"
 version: 0.0.1
 description: "用于搜索和下载 E-Hentai 画廊的 AstrBot 插件"
-author: "KawakazeNotFOund"
-homepage: "https://github.com/KawakazeNotFound/astrbot_plugin_ehentai"
+author: "KawakazeNotFound"
+repo: "https://github.com/KawakazeNotFound/astrbot_plugin_ehentai"
 astrbot_version: ">=4.16,<5"
 support_platforms:
   - aiocqhttp
