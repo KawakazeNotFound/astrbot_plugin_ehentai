@@ -8,6 +8,8 @@ import asyncio
 import base64
 import hashlib
 import re
+import time
+from datetime import datetime
 from math import ceil
 from pathlib import Path
 from uuid import uuid4
@@ -63,6 +65,50 @@ class EHentaiPlugin(Star):
         await init_r2_manager(self.plugin_config)
         await init_d1_manager(self.plugin_config)
         get_logger().info("[E-Hentai插件] R2 和 D1 初始化完成")
+        
+        # 启动后台自动清理任务
+        asyncio.create_task(self._auto_cleanup_task())
+
+    async def _auto_cleanup_task(self):
+        """本地缓存自动清理后台任务"""
+        logger = get_logger()
+        logger.info("[清理任务] 自动清理任务已启动...")
+        last_cleaned_date = None
+
+        while True:
+            try:
+                if self.plugin_config.ehentai_auto_cleanup_local:
+                    now = datetime.now()
+                    current_date = now.date()
+                    target_time_str = self.plugin_config.ehentai_auto_cleanup_time or "03:00"
+                    
+                    # 当时间匹配且今天尚未清理时执行
+                    if now.strftime("%H:%M") == target_time_str and last_cleaned_date != current_date:
+                        download_dir = Path(self.plugin_config.ehentai_download_dir)
+                        if download_dir.exists():
+                            logger.info(f"[清理任务] 达到设定的清理时间 {target_time_str}，开始清理 24 小时前的本地缓存...")
+                            now_ts = time.time()
+                            deleted_count = 0
+                            
+                            # 遍历目录及子目录：删除修改时间超 24 小时的文件
+                            for file_path in download_dir.rglob('*'):
+                                if file_path.is_file():
+                                    file_age_hours = (now_ts - file_path.stat().st_mtime) / 3600
+                                    if file_age_hours > 24:
+                                        try:
+                                            file_path.unlink()
+                                            deleted_count += 1
+                                        except Exception as e:
+                                            logger.warning(f"[清理任务] 无法删除 {file_path}: {e}")
+                            
+                            logger.info(f"[清理任务] 日常自动清理完成，共删除了 {deleted_count} 个存活超过 24 小时的缓存文件。")
+                        
+                        last_cleaned_date = current_date
+            except Exception as e:
+                logger.error(f"[清理任务] 自动清理处理异常: {e}")
+                
+            # 每 30 秒检查一次是否到达设定时间
+            await asyncio.sleep(30)
     
     async def __aenter__(self):
         """向后兼容"""

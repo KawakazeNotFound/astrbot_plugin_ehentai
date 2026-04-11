@@ -142,18 +142,6 @@ class D1Manager:
         except Exception as e:
             logger.error(f"[D1] 记录下载历史失败: {e}")
 
-    async def cleanup_expired_metadata(self) -> int:
-        """从 D1 中清理过期的记录（注意：这不删除 R2 文件，只删除数据库元数据）"""
-        now = datetime.now().isoformat()
-        sql = "DELETE FROM download_history WHERE expiry_time < ?;"
-        try:
-            res = await self._execute(sql, [now])
-            # D1 query API 返回结果因版本而异，这里简单返回
-            return 1
-        except Exception as e:
-            logger.error(f"[D1] 清理过期记录失败: {e}")
-            return 0
-
 _d1_manager: Optional[D1Manager] = None
 
 async def init_d1_manager(config) -> Optional[D1Manager]:
