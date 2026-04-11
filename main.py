@@ -215,11 +215,6 @@ class EHentaiPlugin(Star):
             yield event.plain_result("用法: /download [-original] <关键词>")
             return
         
-        # 检查是否为群聊（group_id 不为空表示群聊）
-        if not event.message_obj.group_id:
-            yield event.plain_result("下载功能仅支持群聊使用")
-            return
-        
         client = self.build_client()
         options = self.build_search_options()
         quality = "original" if use_original else "resample"

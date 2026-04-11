@@ -74,7 +74,6 @@
 
 ## 注意事项
 
-- 下载功能仅支持在**群聊**中使用
 - 需要配置有效的 E-Hentai 登录 Cookie 才能下载
 - 如果使用 exhentai 站点，通常需要配置 IGNEOUS Cookie
 - R2 上传需要有效的 Cloudflare 凭证
@@ -82,15 +81,19 @@
 ## 常见问题
 
 ### Q: 搜索或下载失败？
+
 A: 检查 Cookie 配置是否正确，以及网络连接是否正常。
 
 ### Q: 如何获取登录 Cookie？
-A: 参考 [EhViewer 登录说明](https://github.com/EhViewer-NekoInverter/EhViewer/blob/master/docs/login.md)
+
+A: 可以使用Cookie Editor获取三要素
 
 ### Q: R2 上传失败？
+
 A: 确保 R2 凭证正确，并且 Bucket 名称和 Endpoint 配置无误。
 
 ## 版本
 
 当前转换版本基于 nonebot-plugin-ehentai v0.0.1
+
 # astrbot_plugin_ehentai
