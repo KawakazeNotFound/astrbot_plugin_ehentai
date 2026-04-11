@@ -48,6 +48,9 @@ class EHentaiPlugin(Star):
         # 获取插件配置
         self.plugin_config = PluginConfig(config or {})
         
+        # 存储每个会话最近一次返回的搜索结果页面列表，以支持序号下载
+        self._last_search_results = {}
+        
         # 记录日志
         get_logger().info("[E-Hentai插件] 插件已初始化")
         
@@ -145,6 +148,11 @@ class EHentaiPlugin(Star):
                 _MAX_EH_PAGES,
                 options,
             )
+            # 记录搜索结果到当前会话（用于序号下载）
+            sender_id = getattr(event.message_obj.sender, "user_id", "unknown")
+            group_id = getattr(event.message_obj, "group_id", "private")
+            session_key = f"{group_id}_{sender_id}"
+            self._last_search_results[session_key] = page_results
         except SearchExecutionError as error:
             yield event.plain_result(f"搜索失败: {error}")
             return
@@ -232,18 +240,32 @@ class EHentaiPlugin(Star):
             return
         
         try:
-            results = await execute_gallery_search(client, keyword, 1, options)
+            # 如果输入的是纯数字，则尝试从历史搜索记录中获取对应的序号结果
+            if keyword.isdigit():
+                idx = int(keyword)
+                sender_id = getattr(event.message_obj.sender, "user_id", "unknown")
+                group_id = getattr(event.message_obj, "group_id", "private")
+                session_key = f"{group_id}_{sender_id}"
+                
+                last_results = self._last_search_results.get(session_key, [])
+                if 1 <= idx <= len(last_results):
+                    gallery = last_results[idx - 1]
+                    logger.info(f"[下载处理] 命中最近搜索结果，序号 {idx} -> {gallery.title}")
+                else:
+                    yield event.plain_result(f"序号 {idx} 不正确或您最近没有搜索过。请确认后重试。")
+                    return
+            else:
+                # 常规关键词搜索
+                results = await execute_gallery_search(client, keyword, 1, options)
+                if not results:
+                    yield event.plain_result("没有找到可下载的本子")
+                    return
+                gallery = pick_first_result(results)
+                if gallery is None:
+                    yield event.plain_result("没有找到可下载的本子")
+                    return
         except SearchExecutionError as error:
             yield event.plain_result(f"搜索失败: {error}")
-            return
-        
-        if not results:
-            yield event.plain_result("没有找到可下载的本子")
-            return
-        
-        gallery = pick_first_result(results)
-        if gallery is None:
-            yield event.plain_result("没有找到可下载的本子")
             return
         
         logger.info(f"[下载处理] 找到目标: gid={gallery.gid}, title={gallery.title[:50]}")
