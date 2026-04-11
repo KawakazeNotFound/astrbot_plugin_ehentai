@@ -21,7 +21,6 @@
 
 - **EHENTAI_SITE**: 站点选择（`e` 或 `ex`）
 - **EHENTAI_BASE_URL**: 站点基础 URL
-- **EHENTAI_COOKIE**: 原始 Cookie（可选）
 - **EHENTAI_IPB_MEMBER_ID**: IPB Member ID
 - **EHENTAI_IPB_PASS_HASH**: IPB Pass Hash
 - **EHENTAI_IGNEOUS**: Igneous Cookie（使用 exhentai 时通常需要）
@@ -31,9 +30,8 @@
 
 - **EHENTAI_TIMEOUT**: 请求超时时间（秒）
 - **EHENTAI_PROXY**: 代理地址（可选）
-- **EHENTAI_HTTP_BACKEND**: HTTP 后端（`httpx` 或 `curl_cffi`）
-- **EHENTAI_HTTP3**: 使用 HTTP/3（仅 curl_cffi）
-- **EHENTAI_IMPERSONATE**: 浏览器指纹
+
+以下参数已固定为默认值，不再提供配置项：`ehentai_cookie`、`ehentai_http_backend`、`ehentai_http3`、`ehentai_impersonate`、`ehentai_curl_cffi_skip_on_error`。
 
 ### R2 云存储配置
 

@@ -12,12 +12,6 @@
     "hint": "通常无需修改，程序会根据 ehentai_site 自动选择",
     "default": "https://e-hentai.org"
   },
-  "ehentai_cookie": {
-    "type": "text",
-    "description": "E-Hentai Cookie",
-    "hint": "原始 Cookie Header；如填写，将优先于下方身份 Cookie 配置",
-    "default": ""
-  },
   "ehentai_ipb_member_id": {
     "type": "string",
     "description": "IPB Member ID",
@@ -61,40 +55,17 @@
     "default": "",
     "hint": "如有需要，填写代理 URL"
   },
-  "ehentai_http_backend": {
-    "type": "string",
-    "description": "HTTP 后端",
-    "default": "httpx",
-    "options": ["httpx", "curl_cffi"],
-    "hint": "支持 httpx 或 curl_cffi"
-  },
-  "ehentai_http3": {
-    "type": "bool",
-    "description": "优先使用 HTTP/3（仅 curl_cffi 后端）",
-    "default": true
-  },
   "ehentai_desktop_site": {
     "type": "bool",
     "description": "使用桌面站风格 UA",
     "default": false,
     "hint": "默认关闭，使用移动站策略"
   },
-  "ehentai_impersonate": {
-    "type": "string",
-    "description": "浏览器指纹（curl_cffi 后端）",
-    "default": "chrome124",
-    "hint": "例如 chrome124"
-  },
   "ehentai_enable_direct_ip": {
     "type": "bool",
     "description": "启用直连 IP 方案",
     "default": true,
     "hint": "EhViewer_CN_SXJ 方案，用于绕过网络限制"
-  },
-  "ehentai_curl_cffi_skip_on_error": {
-    "type": "bool",
-    "description": "curl_cffi 搜索失败时立即降级到 httpx",
-    "default": true
   },
   "ehentai_cloudflare_worker_url": {
     "type": "string",

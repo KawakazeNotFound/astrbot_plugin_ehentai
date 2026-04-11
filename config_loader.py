@@ -60,10 +60,6 @@ class PluginConfig:
         return self.get('ehentai_base_url', 'https://e-hentai.org')
     
     @property
-    def ehentai_cookie(self) -> str:
-        return self.get('ehentai_cookie', '')
-    
-    @property
     def ehentai_ipb_member_id(self) -> str:
         return self.get('ehentai_ipb_member_id', '')
     
@@ -96,28 +92,12 @@ class PluginConfig:
         return self.get('ehentai_proxy', '')
     
     @property
-    def ehentai_http_backend(self) -> str:
-        return self.get('ehentai_http_backend', 'httpx')
-    
-    @property
-    def ehentai_http3(self) -> bool:
-        return self.get('ehentai_http3', True)
-    
-    @property
     def ehentai_desktop_site(self) -> bool:
         return self.get('ehentai_desktop_site', False)
     
     @property
-    def ehentai_impersonate(self) -> str:
-        return self.get('ehentai_impersonate', 'chrome124')
-    
-    @property
     def ehentai_enable_direct_ip(self) -> bool:
         return self.get('ehentai_enable_direct_ip', True)
-    
-    @property
-    def ehentai_curl_cffi_skip_on_error(self) -> bool:
-        return self.get('ehentai_curl_cffi_skip_on_error', True)
     
     @property
     def ehentai_cloudflare_worker_url(self) -> str:

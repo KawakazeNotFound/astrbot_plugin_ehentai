@@ -70,7 +70,7 @@ class EHentaiPlugin(Star):
         return EHentaiClient(
             site=self.plugin_config.ehentai_site,
             base_url=self.plugin_config.ehentai_base_url,
-            cookie=self.plugin_config.ehentai_cookie,
+            cookie="",
             ipb_member_id=self.plugin_config.ehentai_ipb_member_id,
             ipb_pass_hash=self.plugin_config.ehentai_ipb_pass_hash,
             igneous=self.plugin_config.ehentai_igneous,
@@ -78,12 +78,12 @@ class EHentaiPlugin(Star):
             user_agent=CHROME_DESKTOP_USER_AGENT,
             timeout=self.plugin_config.ehentai_timeout,
             proxy=self.plugin_config.ehentai_proxy,
-            backend=self.plugin_config.ehentai_http_backend,
-            http3=self.plugin_config.ehentai_http3,
+            backend="httpx",
+            http3=True,
             desktop_site=self.plugin_config.ehentai_desktop_site,
-            impersonate=self.plugin_config.ehentai_impersonate,
+            impersonate="chrome124",
             enable_direct_ip=self.plugin_config.ehentai_enable_direct_ip,
-            curl_cffi_skip_on_error=self.plugin_config.ehentai_curl_cffi_skip_on_error,
+            curl_cffi_skip_on_error=True,
             cloudflare_worker_url=self.plugin_config.ehentai_cloudflare_worker_url,
         )
     
