@@ -117,7 +117,8 @@ class EHentaiPlugin(Star):
         logger.info(f"[搜索处理] 开始处理搜索请求: raw='{raw}'")
         
         # 解析 --page N 参数
-        _RESULTS_PER_PAGE = 3
+        configured_results_per_page = self.plugin_config.ehentai_max_results
+        _RESULTS_PER_PAGE = configured_results_per_page if configured_results_per_page > 0 else 5
         _MAX_EH_PAGES = 3
         
         page_match = re.search(r'--page\s+(\d+)', raw)

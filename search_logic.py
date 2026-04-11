@@ -58,7 +58,7 @@ async def execute_gallery_search_paged(
     client: EHentaiClient,
     keyword: str,
     bot_page: int,
-    results_per_page: int = 3,
+    results_per_page: int = 5,
     max_eh_pages: int = 3,
     options: Optional[SearchOptions] = None,
 ) -> tuple[list[GalleryResult], int]:

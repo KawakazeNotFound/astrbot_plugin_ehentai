@@ -1096,7 +1096,7 @@ class EHentaiClient:
         self,
         keyword: str,
         bot_page: int = 1,
-        results_per_page: int = 3,
+        results_per_page: int = 5,
         max_eh_pages: int = 3,
         options: Optional[SearchOptions] = None,
     ) -> tuple[list[GalleryResult], int]:
