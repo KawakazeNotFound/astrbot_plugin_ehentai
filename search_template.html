@@ -57,9 +57,9 @@
             padding: 28px 36px 28px 48px;
         }
 
+        /* 调整了结果卡片的内边距 */
         .ef-result-card {
-            min-height: 270px;
-            padding: 28px 36px 24px 48px;
+            padding: 28px 36px 28px 48px;
         }
 
         .ef-left-bar {
@@ -150,27 +150,17 @@
             min-width: 0;
         }
 
-        .ef-summary-title-text,
-        .ef-title-text {
+        .ef-summary-title-text {
             color: var(--ef-dark);
             font-weight: 900;
             letter-spacing: 1px;
             line-height: 1.2;
-        }
-
-        .ef-summary-title-text {
             font-size: 30px;
         }
 
-        .ef-summary-subtitle,
-        .ef-subtitle-text,
-        .ef-url,
-        .ef-note-text {
+        .ef-summary-subtitle {
             color: var(--ef-gray-deep);
             line-height: 1.35;
-        }
-
-        .ef-summary-subtitle {
             font-size: 14px;
             font-weight: 600;
         }
@@ -193,17 +183,14 @@
             justify-content: space-between;
         }
 
-        .ef-metric-label,
-        .ef-meta-label,
-        .ef-tag-label {
+        .ef-metric-label {
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 1px;
             color: var(--ef-gray-text);
         }
 
-        .ef-metric-value,
-        .ef-meta-value {
+        .ef-metric-value {
             font-size: 20px;
             font-weight: 900;
             color: var(--ef-dark);
@@ -217,144 +204,125 @@
             gap: 18px;
         }
 
+        /* --- 新的结果卡片布局样式 --- */
         .ef-result-content {
             position: relative;
             z-index: 5;
             display: flex;
-            flex-direction: column;
-            gap: 18px;
+            gap: 24px; /* 左右两栏的间距 */
+            align-items: stretch;
         }
 
-        .ef-result-head {
-            display: grid;
-            grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
-            gap: 24px;
-            align-items: start;
-        }
-
-        .ef-result-main {
+        /* 左侧封面容器 */
+        .ef-card-left {
+            flex: 0 0 240px; /* 固定图片宽度，可根据需要调整 */
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            min-width: 0;
         }
 
-        .ef-chip-row {
+        .ef-cover-img {
+            width: 100%;
+            height: 100%;
+            min-height: 320px;
+            object-fit: cover;
+            border: 2px solid var(--ef-dark);
+            box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.1);
+            background-color: var(--ef-white);
+        }
+
+        /* 右侧信息容器 */
+        .ef-card-right {
+            flex: 1;
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .ef-pill {
-            display: inline-flex;
-            align-items: center;
-            min-height: 28px;
-            padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid var(--ef-gray-mid);
-            font-family: var(--font-mono);
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--ef-dark);
-            letter-spacing: 0.8px;
+            flex-direction: column;
+            min-width: 0; /* 防止内容撑破 flex 容器 */
         }
 
         .ef-title-text {
-            font-size: 28px;
+            font-size: 26px;
+            color: var(--ef-dark);
+            font-weight: 900;
+            line-height: 1.2;
+            margin-bottom: 8px;
+            word-break: break-word;
+            background: var(--ef-white);
+            padding: 8px 12px;
+            border: 1px solid var(--ef-gray-mid);
         }
 
         .ef-subtitle-text {
             font-size: 15px;
             font-weight: 600;
+            color: var(--ef-gray-deep);
+            margin-bottom: 16px;
+            padding: 0 4px;
         }
 
-        .ef-url {
-            font-size: 13px;
-            font-family: var(--font-mono);
-            word-break: break-all;
+        .ef-rating-box {
+            align-self: flex-start;
+            background: var(--ef-dark);
+            color: var(--ef-white);
+            padding: 6px 14px;
+            font-weight: 700;
+            font-size: 16px;
+            letter-spacing: 1px;
+            margin-bottom: 24px;
+            box-shadow: 2px 2px 0 var(--ef-yellow);
         }
 
-        .ef-side-column {
+        /* 右侧底部区域（包含左侧Tags和右侧Meta列） */
+        .ef-card-bottom {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .ef-side-box {
-            min-height: 72px;
-            padding: 12px 14px;
-            background: var(--ef-white);
-            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.05);
-            display: flex;
-            flex-direction: column;
             justify-content: space-between;
+            align-items: flex-end;
+            margin-top: auto; /* 将这部分推到底部 */
+            gap: 20px;
         }
 
-        .ef-cover-img {
-            width: 100%;
+        .ef-tags-box {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--ef-gray-mid);
+            padding: 12px 16px;
+            font-size: 14px;
+            color: var(--ef-gray-deep);
+            line-height: 1.5;
+            min-height: 80px;
+        }
+
+        .ef-tags-label {
+            font-weight: 900;
+            color: var(--ef-dark);
             display: block;
-            object-fit: cover;
+            margin-bottom: 4px;
+        }
+
+        /* 右下角的堆叠信息 */
+        .ef-meta-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end; /* 右对齐 */
+            min-width: 140px;
+        }
+
+        .ef-meta-pill {
+            background: var(--ef-white);
+            border: 2px solid var(--ef-dark);
+            padding: 4px 10px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--ef-dark);
+            text-align: right;
             box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.1);
         }
 
-        .ef-meta-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .ef-meta-box {
-            min-height: 86px;
-            padding: 12px 14px;
-            border-top: 2px solid var(--ef-dark);
-            background: rgba(255, 255, 255, 0.54);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-
-        .ef-note-row {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 14px;
-            align-items: start;
-            padding-top: 2px;
-        }
-
-        .ef-note-text {
-            font-size: 14px;
-            font-weight: 600;
-            word-break: break-word;
-        }
-
-        .ef-tag-box {
-            min-height: 52px;
-            padding: 10px 12px;
-            background: rgba(255, 255, 255, 0.64);
-        }
-
-        .ef-footer-rule {
-            height: 10px;
-            background-image: repeating-linear-gradient(
-                to right,
-                #ffffff,
-                #ffffff 12px,
-                var(--ef-gray-mid) 12px,
-                var(--ef-gray-mid) 20px
-            );
-        }
-
+        /* 响应式调整 */
         @media (max-width: 980px) {
-            .ef-summary-head,
-            .ef-result-head {
+            .ef-summary-head {
                 grid-template-columns: 1fr;
             }
-
-            .ef-summary-meta,
-            .ef-meta-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
             .ef-bg-watermark {
                 right: 12px;
             }
@@ -364,26 +332,29 @@
             body {
                 padding: 20px 10px 32px;
             }
-
             .ef-summary-panel,
             .ef-result-card {
                 padding: 20px 18px 18px 30px;
             }
-
-            .ef-summary-title {
+            /* 手机端改为上下布局 */
+            .ef-result-content {
                 flex-direction: column;
-                align-items: flex-start;
             }
-
-            .ef-summary-meta,
-            .ef-meta-grid,
-            .ef-note-row {
-                grid-template-columns: 1fr;
+            .ef-card-left {
+                flex: none;
+                width: 100%;
+                max-width: 300px;
+                margin: 0 auto;
             }
-
-            .ef-summary-title-text,
-            .ef-title-text {
-                font-size: 22px;
+            .ef-card-bottom {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .ef-meta-stack {
+                align-items: stretch;
+            }
+            .ef-meta-pill {
+                text-align: center;
             }
         }
     </style>
@@ -438,64 +409,41 @@
         </section>
 
         <section class="ef-results-stack">
-            <!-- {{#items}} -->
             <article class="ef-panel ef-result-card">
                 <div class="ef-left-bar"></div>
                 <div class="ef-bg-watermark ef-bg-watermark-result">RESULT {{index}}</div>
 
+                <div class="ef-top-nav">
+                    <div class="ef-tiny-square"></div>
+                    <span>ITEM {{index}} // GID {{gid}}</span>
+                </div>
+
                 <div class="ef-result-content">
-                    <div class="ef-top-nav">
-                        <div class="ef-tiny-square"></div>
-                        <span>ITEM {{index}} // {{category}} // GID {{gid}}</span>
+                    <div class="ef-card-left">
+                        <img class="ef-cover-img" src="{{cover_url}}" alt="{{title}}">
                     </div>
 
-                    <div class="ef-result-head">
-                        <div class="ef-result-main">
-                            <div class="ef-chip-row">
-                                <span class="ef-pill">PAGES {{pages}}</span>
+                    <div class="ef-card-right">
+                        <h2 class="ef-title-text">{{title}}</h2>
+                        <p class="ef-subtitle-text">{{title_jpn}}</p>
+                        <div class="ef-rating-box">Rating: {{rating}}</div>
+
+                        <div class="ef-card-bottom">
+                            <div class="ef-tags-box">
+                                <span class="ef-tags-label">Tags:</span>
+                                {{tags}}
                             </div>
-
-                            <h2 class="ef-title-text">{{title}}</h2>
-                            <p class="ef-subtitle-text">{{title_jpn}}</p>
-                            <p class="ef-url">{{url}}</p>
-                        </div>
-
-                        <aside class="ef-side-column">
-                            <img class="ef-cover-img" src="{{cover_url}}" alt="{{title}}">
-                        </aside>
-                    </div>
-
-                    <div class="ef-meta-grid">
-                        <div class="ef-meta-box">
-                            <span class="ef-meta-label">UPLOADER</span>
-                            <span class="ef-meta-value">{{uploader}}</span>
-                        </div>
-                        <div class="ef-meta-box">
-                            <span class="ef-meta-label">POSTED</span>
-                            <span class="ef-meta-value">{{posted}}</span>
-                        </div>
-                        <div class="ef-meta-box">
-                            <span class="ef-meta-label">RATING</span>
-                            <span class="ef-meta-value">{{rating}}</span>
-                        </div>
-                        <div class="ef-meta-box">
-                            <span class="ef-meta-label">CATEGORY</span>
-                            <span class="ef-meta-value">{{category}}</span>
+                            
+                            <div class="ef-meta-stack">
+                                <div class="ef-meta-pill">Lang: {{language}}</div>
+                                <div class="ef-meta-pill">Pages: {{pages}}</div>
+                                <div class="ef-meta-pill">{{posted}}</div>
+                            </div>
                         </div>
                     </div>
-
-                    <div class="ef-note-row">
-                        <div class="ef-tag-box">
-                            <span class="ef-tag-label">TAGS</span>
-                            <p class="ef-note-text">{{tags}}</p>
-                        </div>
-                    </div>
-
-                    <div class="ef-footer-rule"></div>
                 </div>
             </article>
-            <!-- {{/items}} -->
-        </section>
+            </section>
     </main>
 </body>
 </html>
