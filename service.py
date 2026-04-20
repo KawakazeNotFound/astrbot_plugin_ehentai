@@ -1588,6 +1588,56 @@ class EHentaiClient:
             logger.info(f"[存档] 成功获取下载链接 (标准 DNS)")
             return url
 
+    async def _download_file_with_wget(self, url: str, save_path: Path) -> None:
+        """使用 wget 命令下载文件（httpx 失败时的降级方案）
+        
+        仅在 Linux/Unix 环境中可用
+        """
+        import shutil
+        
+        # 检查 wget 是否存在
+        wget_path = shutil.which("wget")
+        if not wget_path:
+            raise RuntimeError("wget 命令未找到，请在系统上安装 wget")
+        
+        logger.debug(f"[下载] 使用 wget 下载: {wget_path}")
+        
+        # 构建 wget 命令
+        # wget 参数: -q (静默) -O (输出文件) --no-check-certificate (跳过 SSL 检查)
+        cmd = [
+            wget_path,
+            "-q",  # 静默模式
+            "-O", str(save_path),  # 输出文件
+            "--no-check-certificate",  # 跳过 SSL 证书验证
+            "--timeout=30",  # 超时 30 秒
+            url
+        ]
+        
+        logger.debug(f"[下载] wget 命令: {' '.join(cmd)}")
+        
+        try:
+            # 运行 wget 命令
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # 等待完成
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=self.timeout + 10)
+            
+            if process.returncode != 0:
+                error_msg = stderr.decode('utf-8', errors='ignore').strip() if stderr else f"wget 返回码: {process.returncode}"
+                raise RuntimeError(f"wget 下载失败: {error_msg}")
+            
+            logger.debug(f"[下载] wget 下载完成")
+        except asyncio.TimeoutError:
+            logger.error(f"[下载] wget 下载超时")
+            raise RuntimeError("wget 下载超时")
+        except Exception as e:
+            logger.error(f"[下载] wget 执行失败: {e}")
+            raise
+
     async def download_file(self, url: str, save_path: Path) -> Path:
         """下载文件到本地
         
@@ -1714,7 +1764,7 @@ class EHentaiClient:
 
             return save_path
         except Exception as error:
-            # 下载失败，清理部分下载的文件（防止第二次重试时出错）
+            # httpx 下载失败，尝试用 wget 降级
             logger.error(f"[下载] 标准 DNS 下载失败: {type(error).__name__}: {error}")
             if save_path.exists():
                 try:
@@ -1722,4 +1772,19 @@ class EHentaiClient:
                     logger.debug(f"[下载] 清理失败的部分下载文件")
                 except Exception as cleanup_error:
                     logger.warning(f"[下载] 清理文件失败: {cleanup_error}")
-            raise
+            
+            # 尝试用 wget 降级
+            logger.warning(f"[下载] httpx 失败，尝试用 wget 降级")
+            try:
+                await self._download_file_with_wget(url, save_path)
+                file_size = save_path.stat().st_size
+                logger.info(f"[下载] wget 下载成功，大小: {file_size / 1024 / 1024:.2f} MB")
+                return save_path
+            except Exception as wget_error:
+                logger.error(f"[下载] wget 下载也失败: {type(wget_error).__name__}: {wget_error}", exc_info=True)
+                if save_path.exists():
+                    try:
+                        save_path.unlink()
+                    except Exception:
+                        pass
+                raise wget_error
