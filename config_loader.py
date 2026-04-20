@@ -56,10 +56,6 @@ class PluginConfig:
         return self.get('ehentai_site', 'e')
     
     @property
-    def ehentai_base_url(self) -> str:
-        return self.get('ehentai_base_url', 'https://e-hentai.org')
-    
-    @property
     def ehentai_ipb_member_id(self) -> str:
         return self.get('ehentai_ipb_member_id', '')
     

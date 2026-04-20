@@ -6,12 +6,6 @@
     "default": "ex",
     "options": ["e", "ex"]
   },
-  "ehentai_base_url": {
-    "type": "string",
-    "description": "E-Hentai 基础 URL",
-    "hint": "通常无需修改，程序会根据 ehentai_site 自动选择",
-    "default": "https://exhentai.org"
-  },
   "ehentai_ipb_member_id": {
     "type": "string",
     "description": "IPB Member ID",

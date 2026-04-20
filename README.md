@@ -19,8 +19,7 @@
 
 ### 基础配置
 
-- **EHENTAI_SITE**: 站点选择（`e` 或 `ex`）
-- **EHENTAI_BASE_URL**: 站点基础 URL
+- **EHENTAI_SITE**: 站点选择（`e` 或 `ex`）。`ex` 表示 exhentai.org，`e` 表示 e-hentai.org
 - **EHENTAI_IPB_MEMBER_ID**: IPB Member ID
 - **EHENTAI_IPB_PASS_HASH**: IPB Pass Hash
 - **EHENTAI_IGNEOUS**: Igneous Cookie（使用 exhentai 时通常需要）

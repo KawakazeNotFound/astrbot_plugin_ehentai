@@ -118,7 +118,7 @@ class EHentaiPlugin(Star):
         """构建 EHentai 客户端"""
         return EHentaiClient(
             site=self.plugin_config.ehentai_site,
-            base_url=self.plugin_config.ehentai_base_url,
+            base_url="",  # base_url 由 site 参数自动决定，不再从配置读取
             cookie="",
             ipb_member_id=self.plugin_config.ehentai_ipb_member_id,
             ipb_pass_hash=self.plugin_config.ehentai_ipb_pass_hash,
