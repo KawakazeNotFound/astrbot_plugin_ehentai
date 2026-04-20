@@ -502,6 +502,7 @@ async def fetch_gallery_info(
     client: EHentaiClient,
     gid: str,
     token: str,
+    gallery_domain: str = "",
 ) -> Optional[GalleryResult]:
     """从 exhentai/e-hentai 获取单个画廊的详细信息。
     
@@ -509,13 +510,26 @@ async def fetch_gallery_info(
     1. Cloudflare Worker - 优先使用，绕过运营商屏蔽
     2. 直连 IP - 次选，使用内置 IP 地址表
     3. 标准 DNS - 最后降级，使用系统 DNS
+    
+    Args:
+        client: EHentaiClient 实例
+        gid: 画廊 ID
+        token: 画廊访问令牌
+        gallery_domain: 原始画廊链接的域名（如 exhentai.org），用于优先使用用户提供的站点
     """
     
     logger = get_logger()
     
     try:
-        # 构建画廊 URL
-        gallery_url = f"{client.base_url}/g/{gid}/{token}/"
+        # 构建画廊 URL - 优先使用用户提供的域名
+        if gallery_domain:
+            gallery_url = f"https://{gallery_domain}/g/{gid}/{token}/"
+            base_url_from_domain = f"https://{gallery_domain}"
+            logger.info(f"[画廊获取] 使用用户提供的域名: {gallery_domain}")
+        else:
+            gallery_url = f"{client.base_url}/g/{gid}/{token}/"
+            base_url_from_domain = client.base_url
+            logger.info(f"[画廊获取] 使用客户端配置的域名: {client.base_url}")
         logger.info(f"[画廊获取] 正在获取画廊信息: {gallery_url}")
         
         headers = client._headers_for_url(gallery_url)
@@ -532,7 +546,7 @@ async def fetch_gallery_info(
                 # 构造 Worker 请求
                 payload = {
                     "url": gallery_url,
-                    "baseUrl": client.base_url,
+                    "baseUrl": base_url_from_domain,
                     "rawHtml": True,
                 }
                 
@@ -690,7 +704,7 @@ async def fetch_gallery_info(
             src = cover_elem.get("src", "")
             if src:
                 src_str = str(src)
-                cover_url = src_str if src_str.startswith("http") else f"{client.base_url}{src_str}"
+                cover_url = src_str if src_str.startswith("http") else f"{base_url_from_domain}{src_str}"
         
         # 创建 GalleryResult 对象
         gallery = GalleryResult(

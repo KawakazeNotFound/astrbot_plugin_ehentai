@@ -437,9 +437,18 @@ class EHentaiPlugin(Star):
         
         yield event.plain_result("🔄 正在获取画廊信息...")
         
+        # 从用户提供的链接中提取域名
+        domain_match = re.match(r"https?://([^/]+)", gallery_url)
+        if not domain_match:
+            yield event.plain_result("❌ 无法从链接提取域名")
+            return
+        
+        gallery_domain = domain_match.group(1)
+        logger.info(f"[链接处理] 使用原始域名: {gallery_domain}")
+        
         # 获取画廊信息
         try:
-            gallery = await fetch_gallery_info(client, gid, token)
+            gallery = await fetch_gallery_info(client, gid, token, gallery_domain)
             if gallery is None:
                 yield event.plain_result("❌ 获取画廊信息失败，可能需要登录或链接已失效")
                 return
