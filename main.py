@@ -460,42 +460,59 @@ class EHentaiPlugin(Star):
             favorited=-1,
         )
         
-        try:
-            logger.info("[链接处理] 解析存档下载链接")
-            archive_url = await client.resolve_archive_url(gallery.url, prefer_original=False)
-        except Exception as error:
-            logger.error(f"[链接处理] 解析存档失败: {error}")
-            yield event.plain_result(f"❌ 解析下载链接失败: {error}")
-            return
-        
-        if not archive_url:
-            # 尝试提供更详细的错误信息
-            error_msg = (
-                "❌ 无法获取压缩包下载链接\n\n"
-                "可能的原因：\n"
-                "  1. 链接或 Token 已过期\n"
-                f"  2. GID {gid} 不存在或无权限访问\n"
-                "  3. 该画廊不提供存档下载\n"
-                "  4. 服务器暂时不可用\n\n"
-                "💡 建议：检查链接是否正确，或稍后重试"
-            )
-            yield event.plain_result(error_msg)
-            return
-        
         download_dir = Path(self.plugin_config.ehentai_download_dir)
         download_dir.mkdir(parents=True, exist_ok=True)
         file_name = f"{gallery.gid}_{gallery.token}.zip"
         file_path = download_dir / file_name
-        
+
+        max_attempts = 3
+        last_error: Optional[Exception] = None
+        download_success = False
+
         yield event.plain_result("⬇️ 正在下载画廊文件...")
-        logger.info("[链接处理] 开始下载存档文件")
-        
-        try:
-            await client.download_file(archive_url, file_path)
-            logger.info("[链接处理] 下载文件成功")
-        except Exception as error:
-            logger.error(f"[链接处理] 下载文件失败: {error}", exc_info=True)
-            yield event.plain_result(f"❌ 下载失败: {error}")
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(f"[链接处理] 第{attempt}次解析存档下载链接")
+                archive_url = await client.resolve_archive_url(gallery.url, prefer_original=False)
+            except Exception as error:
+                last_error = error
+                logger.error(f"[链接处理] 第{attempt}次解析存档失败: {error}", exc_info=True)
+                continue
+
+            if not archive_url:
+                logger.warning(f"[链接处理] 第{attempt}次未获取到存档链接")
+                continue
+
+            logger.info(f"[链接处理] 开始下载存档文件 (attempt={attempt}/{max_attempts})")
+            try:
+                await client.download_file(archive_url, file_path)
+                logger.info(f"[链接处理] 下载文件成功 (attempt={attempt}/{max_attempts})")
+                download_success = True
+                break
+            except Exception as error:
+                last_error = error
+                logger.error(
+                    f"[链接处理] 下载文件失败 (attempt={attempt}/{max_attempts}): {error}",
+                    exc_info=True,
+                )
+
+                if attempt < max_attempts:
+                    yield event.plain_result(f"🔁 下载失败，正在重试（第 {attempt + 1}/{max_attempts} 次）...")
+
+        if not download_success:
+            if last_error is not None:
+                yield event.plain_result(f"❌ 下载失败（已重试 {max_attempts} 次）: {last_error}")
+            else:
+                error_msg = (
+                    "❌ 无法获取压缩包下载链接\n\n"
+                    "可能的原因：\n"
+                    "  1. 链接或 Token 已过期\n"
+                    f"  2. GID {gid} 不存在或无权限访问\n"
+                    "  3. 该画廊不提供存档下载\n"
+                    "  4. 服务器暂时不可用\n\n"
+                    "💡 建议：检查链接是否正确，或稍后重试"
+                )
+                yield event.plain_result(error_msg)
             return
         
         # 获取 R2 管理器

@@ -1678,6 +1678,17 @@ class EHentaiClient:
         is_hath = "hath.network" in url.lower()
         if is_hath:
             logger.debug(f"[下载] 检测到 HaTH 链接，跳过直连 IP 模式，直接使用标准 DNS")
+            logger.info(f"[下载] HaTH 链接优先使用 wget 下载")
+            try:
+                await self._download_file_with_wget(url, save_path)
+                file_size = save_path.stat().st_size
+                logger.info(f"[下载] wget 下载成功，大小: {file_size / 1024 / 1024:.2f} MB")
+                return save_path
+            except Exception as wget_error:
+                logger.warning(
+                    f"[下载] HaTH wget 首选下载失败，回退到 httpx: {type(wget_error).__name__}: {wget_error}",
+                    exc_info=True,
+                )
 
         # 先尝试直连 IP 模式（仅限非 HaTH 链接）
         if self.enable_direct_ip and not is_hath:
