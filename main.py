@@ -469,7 +469,17 @@ class EHentaiPlugin(Star):
             return
         
         if not archive_url:
-            yield event.plain_result("❌ 未能获取压缩包下载链接，可能需要有效的权限")
+            # 尝试提供更详细的错误信息
+            error_msg = (
+                "❌ 无法获取压缩包下载链接\n\n"
+                "可能的原因：\n"
+                "  1. 链接或 Token 已过期\n"
+                f"  2. GID {gid} 不存在或无权限访问\n"
+                "  3. 该画廊不提供存档下载\n"
+                "  4. 服务器暂时不可用\n\n"
+                "💡 建议：检查链接是否正确，或稍后重试"
+            )
+            yield event.plain_result(error_msg)
             return
         
         download_dir = Path(self.plugin_config.ehentai_download_dir)

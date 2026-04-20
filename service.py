@@ -1306,8 +1306,10 @@ class EHentaiClient:
 
         return all_results[start:end], len(all_results)
 
-    async def _get_archive_page(self, client: httpx.AsyncClient, gid: str, token: str) -> str:
-        archive_page_url = f"{self.base_url}/archiver.php?gid={gid}&token={token}"
+    async def _get_archive_page(self, client: httpx.AsyncClient, gid: str, token: str, gallery_domain: Optional[str] = None) -> str:
+        # 如果提供了gallery_domain，使用用户原始域名；否则使用self.base_url
+        base_url = gallery_domain if gallery_domain else self.base_url
+        archive_page_url = f"{base_url}/archiver.php?gid={gid}&token={token}"
         logger.debug(f"[存档] 获取存档页面: {archive_page_url}")
         
         if self.cloudflare_worker_url:
@@ -1492,6 +1494,11 @@ class EHentaiClient:
 
         gid, token = gid_token
         logger.debug(f"[存档] 提取到 gid={gid}, token={token}")
+        
+        # 提取用户提供的域名，保持原始站点
+        parsed_url = urlparse(gallery_url)
+        gallery_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        logger.debug(f"[存档] 使用用户提供的域名: {gallery_domain}")
 
         # 先尝试直连 IP 模式
         if self.enable_direct_ip:
@@ -1503,7 +1510,7 @@ class EHentaiClient:
                     follow_redirects=True,
                 ) as client:
                     logger.debug(f"[存档] 获取存档页面 (直连 IP)")
-                    archive_page = await self._get_archive_page(client, gid, token)
+                    archive_page = await self._get_archive_page(client, gid, token, gallery_domain)
                     if NEED_HATH_CLIENT_MSG in archive_page:
                         logger.warning(f"[存档] 需要 H@H 客户端")
                         return None
@@ -1534,7 +1541,7 @@ class EHentaiClient:
                             follow_redirects=True,
                         ) as client:
                             logger.debug(f"[存档] 获取存档页面 (标准 DNS)")
-                            archive_page = await self._get_archive_page(client, gid, token)
+                            archive_page = await self._get_archive_page(client, gid, token, gallery_domain)
                             if NEED_HATH_CLIENT_MSG in archive_page:
                                 logger.warning(f"[存档] 需要 H@H 客户端")
                                 return None
@@ -1564,7 +1571,7 @@ class EHentaiClient:
             follow_redirects=True,
         ) as client:
             logger.debug(f"[存档] 获取存档页面 (标准 DNS)")
-            archive_page = await self._get_archive_page(client, gid, token)
+            archive_page = await self._get_archive_page(client, gid, token, gallery_domain)
             if NEED_HATH_CLIENT_MSG in archive_page:
                 logger.warning(f"[存档] 需要 H@H 客户端")
                 return None
