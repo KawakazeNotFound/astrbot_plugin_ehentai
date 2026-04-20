@@ -580,9 +580,10 @@ class EHentaiPlugin(Star):
                     if d1_manager:
                         try:
                             sender_id = event.message_obj.sender.user_id if event.message_obj.sender else "unknown"
+                            db_title = (gallery.title or "未知标题").strip()
                             await d1_manager.record_download(
                                 gid=str(gallery.gid),
-                                title=f"GID {gallery.gid}",
+                                title=db_title,
                                 size_mb=file_size_mb,
                                 user_id=sender_id,
                                 r2_url=r2_url,

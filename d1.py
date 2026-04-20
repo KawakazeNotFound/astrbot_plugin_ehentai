@@ -114,12 +114,26 @@ class D1Manager:
                 # 更新现有记录
                 update_sql = """
                 UPDATE download_history 
-                SET request_count = request_count + 1, 
+                SET title = ?,
+                    file_size_mb = ?,
+                    r2_url = ?,
+                    request_count = request_count + 1, 
                     last_request_time = ?,
                     expiry_time = ?
                 WHERE gid = ? AND user_id = ?;
                 """
-                await self._execute(update_sql, [now.isoformat(), expiry.isoformat(), gid, str(user_id)])
+                await self._execute(
+                    update_sql,
+                    [
+                        title,
+                        round(size_mb, 2),
+                        r2_url,
+                        now.isoformat(),
+                        expiry.isoformat(),
+                        gid,
+                        str(user_id),
+                    ],
+                )
                 logger.info(f"[D1] 更新下载记录: gid={gid}, user_id={user_id}, 请求次数已增加")
             else:
                 # 新增记录

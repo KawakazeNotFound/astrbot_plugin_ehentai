@@ -437,8 +437,10 @@ def _build_gallery_preview_html(
     </main>
 </body>
 </html>"""
-    
-    return base_html.replace("{item_html}", rendered_item)
+
+    html_with_item = base_html.replace("{item_html}", rendered_item)
+    # 顶部导航中的 gid 占位符不在 item_block 内，需要额外替换。
+    return _replace_placeholders(html_with_item, {"gid": gallery.gid})
 
 
 async def render_gallery_preview_image(
@@ -644,50 +646,53 @@ async def fetch_gallery_info(
         title_jpn = title_jpn_elem.get_text(strip=True) if title_jpn_elem else ""
         logger.debug(f"[画廊获取] 日文标题元素: {title_jpn_elem}, 提取结果: {title_jpn}")
         
-        # 获取评分 - 改进选择器
+        # 获取评分
         rating = -1.0
-        # 尝试多个选择器
-        rating_elem = soup.select_one(".rating")
-        if not rating_elem:
-            rating_elem = soup.select_one("span.rating")
-        if rating_elem:
+        rating_candidates = [
+            soup.select_one("#rating_label"),
+            soup.select_one(".rating"),
+            soup.select_one("span.rating"),
+        ]
+        for rating_elem in rating_candidates:
+            if not rating_elem:
+                continue
+            rating_text = rating_elem.get_text(strip=True)
+            match = re.search(r"(\d+(?:\.\d+)?)", rating_text)
+            if not match:
+                continue
             try:
-                rating_text = rating_elem.get_text(strip=True)
-                rating = float(rating_text)
+                rating = float(match.group(1))
                 logger.debug(f"[画廊获取] 评分: {rating_text} -> {rating}")
-            except (ValueError, AttributeError) as e:
-                logger.debug(f"[画廊获取] 评分解析失败: {e}")
-        else:
-            logger.debug("[画廊获取] 未找到评分元素")
-        
-        # 获取页数和其他元数据
+                break
+            except ValueError:
+                continue
+        if rating < 0:
+            logger.debug("[画廊获取] 未找到可解析评分")
+
+        # 获取页数和发布时间
         pages = 0
         posted = ""
-        
-        # 查找 gd2 div 内的元数据行
-        gd2 = soup.select_one(".gd2")
-        if gd2:
-            rows = gd2.find_all("div", recursive=False)
-            logger.debug(f"[画廊获取] 在 .gd2 中找到 {len(rows)} 行元数据")
-            for row in rows:
-                text = row.get_text(strip=True)
-                logger.debug(f"[画廊获取] 元数据行: {text[:50]}")
-                # 查找页数行
-                if "pages" in text.lower():
-                    try:
-                        parts = text.lower().split()
-                        if parts:
-                            pages = int(parts[0])
-                            logger.debug(f"[画廊获取] 提取页数: {pages}")
-                    except (ValueError, IndexError):
-                        pass
-                # 查找上传日期
-                if "posted" in text.lower() or any(month in text for month in 
-                    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
-                    posted = text
-                    logger.debug(f"[画廊获取] 提取上传时间: {posted}")
+        gdd_rows = soup.select("#gdd tr")
+        if gdd_rows:
+            logger.debug(f"[画廊获取] 在 #gdd 中找到 {len(gdd_rows)} 行元数据")
+            for row in gdd_rows:
+                key_elem = row.select_one(".gdt1")
+                value_elem = row.select_one(".gdt2")
+                if not key_elem or not value_elem:
+                    continue
+                key_text = key_elem.get_text(" ", strip=True).lower()
+                value_text = value_elem.get_text(" ", strip=True)
+                if "posted" in key_text and not posted:
+                    posted = value_text
+                if "page" in key_text and pages <= 0:
+                    page_match = re.search(r"(\d+)", value_text)
+                    if page_match:
+                        try:
+                            pages = int(page_match.group(1))
+                        except ValueError:
+                            pages = 0
         else:
-            logger.warning("[画廊获取] 未找到 .gd2 元素")
+            logger.warning("[画廊获取] 未找到 #gdd 元数据表")
         
         # 获取标签
         tags = []
@@ -720,16 +725,47 @@ async def fetch_gallery_info(
         
         # 获取封面 URL
         cover_url = ""
-        cover_elem = soup.select_one("div.thumb img")
-        if cover_elem:
-            src = cover_elem.get("src", "")
-            logger.debug(f"[画廊获取] 找到封面元素，src={src[:50] if src else '空'}")
-            if src:
-                src_str = str(src)
-                cover_url = src_str if src_str.startswith("http") else f"{base_url_from_domain}{src_str}"
-                logger.debug(f"[画廊获取] 最终封面URL: {cover_url[:50]}")
-        else:
-            logger.warning("[画廊获取] 未找到封面图元素 (div.thumb img)")
+        cover_selectors = [
+            "#gd1 img",
+            "div.thumb img",
+            ".gleft img",
+            "img#img",
+        ]
+        for selector in cover_selectors:
+            cover_elem = soup.select_one(selector)
+            if not cover_elem:
+                continue
+            src_value = cover_elem.get("data-src") or cover_elem.get("src") or ""
+            src_str = str(src_value).strip()
+            if not src_str:
+                continue
+            cover_url = src_str if src_str.startswith("http") else f"{base_url_from_domain}{src_str}"
+            logger.debug(f"[画廊获取] 通过 {selector} 提取封面URL: {cover_url[:80]}")
+            break
+
+        # 兜底: 从 #gd1 style 中提取 background-image URL
+        if not cover_url:
+            gd1_inner = soup.select_one("#gd1 > div")
+            if gd1_inner:
+                style_text = str(gd1_inner.get("style", ""))
+                style_match = re.search(r"url\((['\"]?)(.*?)\1\)", style_text)
+                if style_match:
+                    style_url = style_match.group(2).strip()
+                    if style_url:
+                        cover_url = style_url if style_url.startswith("http") else f"{base_url_from_domain}{style_url}"
+                        logger.debug(f"[画廊获取] 通过 #gd1 style 提取封面URL: {cover_url[:80]}")
+
+        # 兜底: og:image
+        if not cover_url:
+            og_image = soup.select_one('meta[property="og:image"]')
+            if og_image:
+                og_url = str(og_image.get("content", "")).strip()
+                if og_url:
+                    cover_url = og_url
+                    logger.debug(f"[画廊获取] 通过 og:image 提取封面URL: {cover_url[:80]}")
+
+        if not cover_url:
+            logger.warning("[画廊获取] 未找到可用封面URL")
         
         # 创建 GalleryResult 对象
         gallery = GalleryResult(
