@@ -548,9 +548,6 @@ class EHentaiPlugin(Star):
             f"请稍候后手动下载，或联系管理员。"
         )
         yield event.plain_result(msg)
-        except Exception as error:
-            logger.error(f"[链接处理] 处理异常: {type(error).__name__}: {error}")
-            yield event.plain_result(f"❌ 处理失败: {error}")
     
     async def terminate(self):
         """插件卸载时的清理"""
