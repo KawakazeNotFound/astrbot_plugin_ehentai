@@ -7,11 +7,13 @@ import base64
 import html
 import importlib
 import re
+import ssl
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
 
 import httpx
+from httpx import ConnectError as HttpxConnectError
 from bs4 import BeautifulSoup
 
 from .service import EHentaiClient, GalleryResult
@@ -76,6 +78,7 @@ async def _fetch_cover_as_data_uri(
                 if attempt >= _COVER_FETCH_RETRY:
                     return ""
                 await asyncio.sleep(0.25 * attempt)
+    return ""
 
 
 def _normalize_text(value: Any) -> str:
@@ -500,7 +503,13 @@ async def fetch_gallery_info(
     gid: str,
     token: str,
 ) -> Optional[GalleryResult]:
-    """从 exhentai/e-hentai 获取单个画廊的详细信息"""
+    """从 exhentai/e-hentai 获取单个画廊的详细信息。
+    
+    获取方式优先级（运营商屏蔽处理）：
+    1. Cloudflare Worker - 优先使用，绕过运营商屏蔽
+    2. 直连 IP - 次选，使用内置 IP 地址表
+    3. 标准 DNS - 最后降级，使用系统 DNS
+    """
     
     logger = get_logger()
     
@@ -509,20 +518,102 @@ async def fetch_gallery_info(
         gallery_url = f"{client.base_url}/g/{gid}/{token}/"
         logger.info(f"[画廊获取] 正在获取画廊信息: {gallery_url}")
         
-        # 发送请求
         headers = client._headers_for_url(gallery_url)
         cookies_header = client._cookie_pairs_for_url(gallery_url)
+        cookies_str = client._build_cookie_header(gallery_url)
         
-        async with client._client() as http_client:
-            resp = await http_client.get(
-                gallery_url,
+        body = None
+        
+        # 优先使用 Cloudflare Worker（如果配置了）以绕过运营商屏蔽
+        if client.cloudflare_worker_url:
+            try:
+                logger.info(f"[画廊获取] 优先使用 Cloudflare Worker 绕过屏蔽: {client.cloudflare_worker_url}")
+                
+                # 构造 Worker 请求
+                payload = {
+                    "url": gallery_url,
+                    "baseUrl": client.base_url,
+                    "rawHtml": True,
+                }
+                
+                if cookies_str:
+                    payload["cookies"] = cookies_str
+                    logger.debug(f"[画廊获取] 使用自定义 Cookie (长度: {len(cookies_str)} 字符)")
+                
+                worker_headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": headers.get("User-Agent", "Mozilla/5.0"),
+                }
+                
+                async with httpx.AsyncClient(
+                    timeout=client.timeout,
+                    verify=False,
+                    follow_redirects=True,
+                ) as http_client:
+                    resp = await http_client.post(
+                        client.cloudflare_worker_url,
+                        json=payload,
+                        headers=worker_headers,
+                    )
+                
+                logger.debug(f"[画廊获取] Worker 响应状态码: {resp.status_code}")
+                
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("success"):
+                        body = data.get("html", "")
+                        if body:
+                            logger.info("[画廊获取] Worker 成功获取画廊页面")
+                    else:
+                        logger.warning(f"[画廊获取] Worker 返回失败: {data.get('error', '未知错误')}")
+                else:
+                    logger.warning(f"[画廊获取] Worker 返回非 200 状态码: {resp.status_code}")
+                    
+            except Exception as error:
+                logger.warning(
+                    f"[画廊获取] Worker 请求失败: {type(error).__name__}: {error}",
+                    exc_info=False
+                )
+        
+        # 如果 Worker 失败或未配置，降级到直连 IP
+        if body is None and client.enable_direct_ip:
+            try:
+                logger.debug("[画廊获取] Worker 不可用，降级到直连 IP 模式")
+                request_url = client._get_request_url_for_direct_ip(gallery_url)
+                async with client._client() as http_client:
+                    resp = await http_client.get(
+                        request_url,
+                        headers=headers,
+                        cookies=dict(cookies_header) if cookies_header else None,
+                        timeout=client.timeout,
+                    )
+                    resp.raise_for_status()
+                    body = resp.text
+                logger.info("[画廊获取] 直连 IP 获取成功")
+            except Exception as error:
+                if isinstance(error, (HttpxConnectError, ssl.SSLError, TimeoutError)):
+                    logger.warning(
+                        f"[画廊获取] 直連 IP 失败，继续尝试标准 DNS: {type(error).__name__}",
+                        exc_info=False
+                    )
+                    body = None
+                else:
+                    raise
+        
+        # 最后降级到标准 DNS
+        if body is None:
+            logger.debug("[画廊获取] 尝试标准 DNS 模式")
+            async with httpx.AsyncClient(
                 headers=headers,
-                cookies=dict(cookies_header) if cookies_header else None,
                 timeout=client.timeout,
-            )
-            resp.raise_for_status()
-            
-        body = resp.text
+                follow_redirects=True,
+                verify=False,
+            ) as http_client:
+                resp = await http_client.get(gallery_url, cookies=dict(cookies_header) if cookies_header else None)
+                resp.raise_for_status()
+                body = resp.text
+            logger.info("[画廊获取] 标准 DNS 获取成功")
+        
         soup = BeautifulSoup(body, "html.parser")
         
         # 解析画廊信息
@@ -540,7 +631,6 @@ async def fetch_gallery_info(
         if rating_elem:
             try:
                 rating_text = rating_elem.get_text(strip=True)
-                # 评分通常是 "4.5" 的格式
                 rating = float(rating_text)
             except (ValueError, AttributeError):
                 pass
@@ -552,14 +642,12 @@ async def fetch_gallery_info(
         # 查找 gd2 div 内的元数据行
         gd2 = soup.select_one(".gd2")
         if gd2:
-            # gd2 包含的是页数、上传时间等信息
             rows = gd2.find_all("div", recursive=False)
             for row in rows:
                 text = row.get_text(strip=True)
                 # 查找页数行
                 if "pages" in text.lower():
                     try:
-                        # 提取数字，格式可能是 "250 pages" 或类似的
                         parts = text.lower().split()
                         if parts:
                             pages = int(parts[0])
@@ -601,7 +689,8 @@ async def fetch_gallery_info(
         if cover_elem:
             src = cover_elem.get("src", "")
             if src:
-                cover_url = src if src.startswith("http") else f"{client.base_url}{src}"
+                src_str = str(src)
+                cover_url = src_str if src_str.startswith("http") else f"{client.base_url}{src_str}"
         
         # 创建 GalleryResult 对象
         gallery = GalleryResult(
@@ -623,3 +712,4 @@ async def fetch_gallery_info(
     except Exception as error:
         logger.error(f"[画廊获取] 获取画廊信息失败: {type(error).__name__}: {error}")
         return None
+
