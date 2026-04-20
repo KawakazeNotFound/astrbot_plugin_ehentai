@@ -34,6 +34,11 @@ from .search_logic import (
     pick_first_result,
 )
 from .search_render import SearchRenderError, render_search_results_image
+from .gallery_preview import (
+    GalleryPreviewError,
+    render_gallery_preview_image,
+    fetch_gallery_info,
+)
 from .r2 import init_r2_manager, get_r2_manager
 from .d1 import init_d1_manager, get_d1_manager
 
@@ -395,6 +400,118 @@ class EHentaiPlugin(Star):
             f"请稍候后手动下载，或联系管理员。"
         )
         yield event.plain_result(msg)
+    
+    @filter.regex(r"https?://(?:exhentai\.org|e-hentai\.org(?:/lofi)?)/(?:g|mpv)/(\d+)/([0-9a-f]{10})")
+    async def handle_gallery_link(self, event: AstrMessageEvent):
+        """处理 E-Hentai 画廊链接
+        
+        当用户发送 exhentai.org 或 e-hentai.org 的链接时：
+        1. 获取画廊详细信息
+        2. 生成预览图
+        3. 上传到 R2
+        4. 返回下载链接
+        """
+        logger = get_logger()
+        
+        raw = event.message_str.strip()
+        logger.info(f"[链接处理] 捕捉到画廊链接: {raw[:80]}")
+        
+        # 提取链接
+        match = re.search(r"(https?://(?:exhentai\.org|e-hentai\.org(?:/lofi)?)/(?:g|mpv)/\d+/[0-9a-f]{10})", raw)
+        if not match:
+            logger.warning("[链接处理] 无法从消息中提取链接")
+            return
+        
+        gallery_url = match.group(1)
+        
+        client = self.build_client()
+        
+        # 从URL提取gid和token
+        gid_token = client._extract_gid_token(gallery_url)
+        if not gid_token:
+            yield event.plain_result("❌ 无法解析链接，请检查链接是否正确")
+            return
+        
+        gid, token = gid_token
+        logger.info(f"[链接处理] 已提取 gid={gid}, token={token}")
+        
+        yield event.plain_result("🔄 正在获取画廊信息...")
+        
+        # 获取画廊信息
+        try:
+            gallery = await fetch_gallery_info(client, gid, token)
+            if gallery is None:
+                yield event.plain_result("❌ 获取画廊信息失败，可能需要登录或链接已失效")
+                return
+        except Exception as error:
+            logger.error(f"[链接处理] 获取画廊信息异常: {error}")
+            yield event.plain_result(f"❌ 获取画廊信息失败: {error}")
+            return
+        
+        logger.info(f"[链接处理] 成功获取画廊信息: {gallery.title}")
+        
+        # 生成预览图
+        render_dir = Path(self.plugin_config.ehentai_download_dir) / "gallery_preview"
+        try:
+            logger.info("[链接处理] 开始生成预览图...")
+            image_path = await render_gallery_preview_image(gallery, render_dir)
+            logger.info(f"[链接处理] 预览图生成完成: {image_path}")
+            
+            # 上传预览图到 R2
+            r2_manager = get_r2_manager()
+            if r2_manager is None:
+                r2_manager = await init_r2_manager(self.plugin_config)
+            
+            if r2_manager and r2_manager.is_available:
+                logger.info("[链接处理] 开始上传预览图到 R2...")
+                try:
+                    preview_filename = f"preview_{gallery.gid}.jpg"
+                    preview_url = await r2_manager.upload_file(str(image_path), preview_filename)
+                    
+                    if preview_url:
+                        logger.info(f"[链接处理] 预览图上传成功: {preview_url}")
+                        
+                        # 先发送预览图
+                        yield event.image_result(str(image_path))
+                        
+                        # 然后发送信息和R2链接
+                        safe_title = gallery.title.encode("utf-8", errors="ignore").decode("utf-8")
+                        rating_str = f"{gallery.rating:.1f}" if gallery.rating >= 0 else "N/A"
+                        text_info = (
+                            f"📖 {safe_title}\n\n"
+                            f"📊 详情：\n"
+                            f"  • 页数: {gallery.pages}\n"
+                            f"  • 评分: {rating_str}\n"
+                            f"  • 标签: {', '.join(gallery.tags[:5]) if gallery.tags else '(无)'}\n\n"
+                            f"🔗 预览图链接:\n{preview_url}\n\n"
+                            f"💾 链接有效期: {r2_manager.retention_hours} 小时"
+                        )
+                        yield event.plain_result(text_info)
+                        return
+                except Exception as error:
+                    logger.warning(f"[链接处理] 预览图上传失败: {error}")
+            
+            # R2 不可用，直接发送本地图片
+            logger.info("[链接处理] R2 不可用，直接发送本地预览图")
+            yield event.image_result(str(image_path))
+            
+            safe_title = gallery.title.encode("utf-8", errors="ignore").decode("utf-8")
+            rating_str = f"{gallery.rating:.1f}" if gallery.rating >= 0 else "N/A"
+            text_info = (
+                f"📖 {safe_title}\n\n"
+                f"📊 详情：\n"
+                f"  • 页数: {gallery.pages}\n"
+                f"  • 评分: {rating_str}\n"
+                f"  • 标签: {', '.join(gallery.tags[:5]) if gallery.tags else '(无)'}"
+            )
+            yield event.plain_result(text_info)
+            
+        except GalleryPreviewError as error:
+            logger.error(f"[链接处理] 预览图渲染失败: {error}")
+            yield event.plain_result(f"❌ 生成预览图失败: {error}")
+        except Exception as error:
+            logger.error(f"[链接处理] 处理异常: {type(error).__name__}: {error}")
+            yield event.plain_result(f"❌ 处理失败: {error}")
     
     async def terminate(self):
         """插件卸载时的清理"""
