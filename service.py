@@ -1624,8 +1624,13 @@ class EHentaiClient:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         logger.debug(f"[下载] 创建下载目录成功")
 
-        # 先尝试直连 IP 模式
-        if self.enable_direct_ip:
+        # 检查是否是 HaTH 链接 - HaTH 不支持直连 IP，必须用标准 DNS
+        is_hath = "hath.network" in url.lower()
+        if is_hath:
+            logger.debug(f"[下载] 检测到 HaTH 链接，跳过直连 IP 模式，直接使用标准 DNS")
+
+        # 先尝试直连 IP 模式（仅限非 HaTH 链接）
+        if self.enable_direct_ip and not is_hath:
             try:
                 request_url = self._get_request_url_for_direct_ip(url)
                 logger.debug(f"[下载] 使用直连 IP 模式: {request_url}")
@@ -1670,6 +1675,16 @@ class EHentaiClient:
                                         downloaded += len(chunk)
                             logger.info(f"[下载] 标准 DNS 下载成功，大小: {downloaded / 1024 / 1024:.2f} MB")
                         return save_path
+                    except Exception as retry_error:
+                        # 标准 DNS 也失败
+                        logger.error(f"[下载] 标准 DNS 重试失败: {type(retry_error).__name__}: {retry_error}", exc_info=True)
+                        if save_path.exists():
+                            try:
+                                save_path.unlink()
+                                logger.debug(f"[下载] 清理失败的部分下载文件")
+                            except Exception as cleanup_error:
+                                logger.warning(f"[下载] 清理文件失败: {cleanup_error}")
+                        raise
                     finally:
                         # 恢复设置
                         self.enable_direct_ip = True

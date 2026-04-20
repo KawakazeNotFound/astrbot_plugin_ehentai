@@ -494,7 +494,7 @@ class EHentaiPlugin(Star):
             await client.download_file(archive_url, file_path)
             logger.info("[链接处理] 下载文件成功")
         except Exception as error:
-            logger.error(f"[链接处理] 下载文件失败: {error}")
+            logger.error(f"[链接处理] 下载文件失败: {error}", exc_info=True)
             yield event.plain_result(f"❌ 下载失败: {error}")
             return
         
