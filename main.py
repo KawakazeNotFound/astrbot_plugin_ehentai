@@ -25,7 +25,7 @@ from astrbot.api.event import MessageChain
 
 from .config_loader import PluginConfig
 from .logger_compat import init_logger, get_logger
-from .service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT
+from .service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
 from .search_logic import (
     SearchExecutionError,
     execute_gallery_search,
@@ -34,11 +34,6 @@ from .search_logic import (
     pick_first_result,
 )
 from .search_render import SearchRenderError, render_search_results_image
-from .gallery_preview import (
-    GalleryPreviewError,
-    render_gallery_preview_image,
-    fetch_gallery_info,
-)
 from .r2 import init_r2_manager, get_r2_manager
 from .d1 import init_d1_manager, get_d1_manager
 
@@ -401,15 +396,15 @@ class EHentaiPlugin(Star):
         )
         yield event.plain_result(msg)
     
-    @filter.regex(r"https?://(?:exhentai\.org|e-hentai\.org(?:/lofi)?)/(?:g|mpv)/(\d+)/([0-9a-f]{10})")
+    @filter.regex(r"https?://(?:exhentai\.org|e-hentai\.org(?:/lofi)?)/(?:g|mpv)/\d+/[0-9a-f]{10}")
     async def handle_gallery_link(self, event: AstrMessageEvent):
         """处理 E-Hentai 画廊链接
         
         当用户发送 exhentai.org 或 e-hentai.org 的链接时：
-        1. 获取画廊详细信息
-        2. 生成预览图
+        1. 提取 gid 和 token
+        2. 下载整个画廊（压缩包）
         3. 上传到 R2
-        4. 返回下载链接
+        4. 返回可下载的链接
         """
         logger = get_logger()
         
@@ -435,89 +430,124 @@ class EHentaiPlugin(Star):
         gid, token = gid_token
         logger.info(f"[链接处理] 已提取 gid={gid}, token={token}")
         
+        # 检查登录状态
+        if not client.has_login_cookies():
+            yield event.plain_result("❌ 下载需要登录 Cookie。请在配置中设置 EHENTAI_IPB_MEMBER_ID 和 EHENTAI_IPB_PASS_HASH")
+            return
+        
+        if client.site.lower() == "ex" and not client.has_ex_cookie():
+            yield event.plain_result("❌ 当前站点为 exhentai，需要 EHENTAI_IGNEOUS Cookie")
+            return
+        
         yield event.plain_result("🔄 正在获取画廊信息...")
         
-        # 从用户提供的链接中提取域名
-        domain_match = re.match(r"https?://([^/]+)", gallery_url)
-        if not domain_match:
-            yield event.plain_result("❌ 无法从链接提取域名")
-            return
+        # 从gid和token构造gallery对象（最小信息）
+        gallery = GalleryResult(
+            gid=gid,
+            token=token,
+            title="",  # 将在下载时填充
+            url=gallery_url,
+            category="",
+            posted="",
+            uploader="",
+            rating=-1.0,
+            pages=0,
+            cover_url="",
+            thumb_width=0,
+            thumb_height=0,
+            tags=[],
+            disowned=False,
+            favorited=-1,
+        )
         
-        gallery_domain = domain_match.group(1)
-        logger.info(f"[链接处理] 使用原始域名: {gallery_domain}")
-        
-        # 获取画廊信息
         try:
-            gallery = await fetch_gallery_info(client, gid, token, gallery_domain)
-            if gallery is None:
-                yield event.plain_result("❌ 获取画廊信息失败，可能需要登录或链接已失效")
-                return
+            logger.info("[链接处理] 解析存档下载链接")
+            archive_url = await client.resolve_archive_url(gallery.url, prefer_original=False)
         except Exception as error:
-            logger.error(f"[链接处理] 获取画廊信息异常: {error}")
-            yield event.plain_result(f"❌ 获取画廊信息失败: {error}")
+            logger.error(f"[链接处理] 解析存档失败: {error}")
+            yield event.plain_result(f"❌ 解析下载链接失败: {error}")
             return
         
-        logger.info(f"[链接处理] 成功获取画廊信息: {gallery.title}")
+        if not archive_url:
+            yield event.plain_result("❌ 未能获取压缩包下载链接，可能需要有效的权限")
+            return
         
-        # 生成预览图
-        render_dir = Path(self.plugin_config.ehentai_download_dir) / "gallery_preview"
+        download_dir = Path(self.plugin_config.ehentai_download_dir)
+        download_dir.mkdir(parents=True, exist_ok=True)
+        file_name = f"{gallery.gid}_{gallery.token}.zip"
+        file_path = download_dir / file_name
+        
+        yield event.plain_result("⬇️ 正在下载画廊文件...")
+        logger.info("[链接处理] 开始下载存档文件")
+        
         try:
-            logger.info("[链接处理] 开始生成预览图...")
-            image_path = await render_gallery_preview_image(gallery, render_dir)
-            logger.info(f"[链接处理] 预览图生成完成: {image_path}")
-            
-            # 上传预览图到 R2
-            r2_manager = get_r2_manager()
-            if r2_manager is None:
-                r2_manager = await init_r2_manager(self.plugin_config)
-            
-            if r2_manager and r2_manager.is_available:
-                logger.info("[链接处理] 开始上传预览图到 R2...")
-                try:
-                    preview_filename = f"preview_{gallery.gid}.jpg"
-                    preview_url = await r2_manager.upload_file(str(image_path), preview_filename)
+            await client.download_file(archive_url, file_path)
+            logger.info("[链接处理] 下载文件成功")
+        except Exception as error:
+            logger.error(f"[链接处理] 下载文件失败: {error}")
+            yield event.plain_result(f"❌ 下载失败: {error}")
+            return
+        
+        # 获取 R2 管理器
+        file_size_mb = file_path.stat().st_size / 1024 / 1024
+        r2_manager = get_r2_manager()
+        if r2_manager is None:
+            r2_manager = await init_r2_manager(self.plugin_config)
+        
+        # 尝试上传到 R2
+        if r2_manager and r2_manager.is_available:
+            yield event.plain_result("⬆️ 正在上传到 R2...")
+            logger.info("[链接处理] 尝试 R2 上传...")
+            try:
+                r2_url = await r2_manager.upload_file(str(file_path), file_path.name)
+                if r2_url:
+                    logger.info(f"[链接处理] R2 上传成功: {r2_url}")
                     
-                    if preview_url:
-                        logger.info(f"[链接处理] 预览图上传成功: {preview_url}")
-                        
-                        # 先发送预览图
-                        yield event.image_result(str(image_path))
-                        
-                        # 然后发送信息和R2链接
-                        safe_title = gallery.title.encode("utf-8", errors="ignore").decode("utf-8")
-                        rating_str = f"{gallery.rating:.1f}" if gallery.rating >= 0 else "N/A"
-                        text_info = (
-                            f"📖 {safe_title}\n\n"
-                            f"📊 详情：\n"
-                            f"  • 页数: {gallery.pages}\n"
-                            f"  • 评分: {rating_str}\n"
-                            f"  • 标签: {', '.join(gallery.tags[:5]) if gallery.tags else '(无)'}\n\n"
-                            f"🔗 预览图链接:\n{preview_url}\n\n"
-                            f"💾 链接有效期: {r2_manager.retention_hours} 小时"
-                        )
-                        yield event.plain_result(text_info)
-                        return
-                except Exception as error:
-                    logger.warning(f"[链接处理] 预览图上传失败: {error}")
-            
-            # R2 不可用，直接发送本地图片
-            logger.info("[链接处理] R2 不可用，直接发送本地预览图")
-            yield event.image_result(str(image_path))
-            
-            safe_title = gallery.title.encode("utf-8", errors="ignore").decode("utf-8")
-            rating_str = f"{gallery.rating:.1f}" if gallery.rating >= 0 else "N/A"
-            text_info = (
-                f"📖 {safe_title}\n\n"
-                f"📊 详情：\n"
-                f"  • 页数: {gallery.pages}\n"
-                f"  • 评分: {rating_str}\n"
-                f"  • 标签: {', '.join(gallery.tags[:5]) if gallery.tags else '(无)'}"
-            )
-            yield event.plain_result(text_info)
-            
-        except GalleryPreviewError as error:
-            logger.error(f"[链接处理] 预览图渲染失败: {error}")
-            yield event.plain_result(f"❌ 生成预览图失败: {error}")
+                    # 准备消息
+                    text_info = (
+                        f"✅ 画廊下载完成！\n\n"
+                        f"🔗 下载链接：\n{r2_url}\n\n"
+                        f"📦 文件信息：\n"
+                        f"  • 大小：{file_size_mb:.2f} MB\n"
+                        f"  • 格式：ZIP 压缩包\n\n"
+                        f"⏰ 链接有效期：{r2_manager.retention_hours} 小时\n\n"
+                        f"💾 GID: {gid}"
+                    )
+                    
+                    # 记录 D1
+                    d1_manager = get_d1_manager()
+                    if d1_manager is None:
+                        d1_manager = await init_d1_manager(self.plugin_config)
+                    if d1_manager:
+                        try:
+                            sender_id = event.message_obj.sender.user_id if event.message_obj.sender else "unknown"
+                            await d1_manager.record_download(
+                                gid=str(gallery.gid),
+                                title=f"GID {gallery.gid}",
+                                size_mb=file_size_mb,
+                                user_id=sender_id,
+                                r2_url=r2_url,
+                                retention_hours=r2_manager.retention_hours
+                            )
+                        except Exception as e:
+                            logger.warning(f"[链接处理] 记录 D1 失败: {e}")
+                    
+                    yield event.plain_result(text_info)
+                    return
+            except Exception as error:
+                logger.warning(f"[链接处理] R2 上传失败: {error}")
+        
+        # R2 不可用或失败，返回文件信息
+        msg = (
+            f"✓ 下载完成！\n"
+            f"但上传 R2 失败（R2 不可用）\n\n"
+            f"📦 文件信息：\n"
+            f"  • 文件名: {file_path.name}\n"
+            f"  • 大小: {file_size_mb:.2f} MB\n"
+            f"  • 路径: {file_path}\n\n"
+            f"请稍候后手动下载，或联系管理员。"
+        )
+        yield event.plain_result(msg)
         except Exception as error:
             logger.error(f"[链接处理] 处理异常: {type(error).__name__}: {error}")
             yield event.plain_result(f"❌ 处理失败: {error}")

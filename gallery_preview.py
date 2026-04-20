@@ -630,24 +630,35 @@ async def fetch_gallery_info(
         
         soup = BeautifulSoup(body, "html.parser")
         
+        # 调试：输出HTML前500字符用于诊断
+        logger.debug(f"[画廊获取] HTML 前500字符: {body[:500]}")
+        
         # 解析画廊信息
         # 获取标题
         title_elem = soup.select_one("#gn")
         title = title_elem.get_text(strip=True) if title_elem else "Unknown"
+        logger.debug(f"[画廊获取] 标题元素: {title_elem}, 提取结果: {title}")
         
         # 获取日文标题
         title_jpn_elem = soup.select_one("#gj")
         title_jpn = title_jpn_elem.get_text(strip=True) if title_jpn_elem else ""
+        logger.debug(f"[画廊获取] 日文标题元素: {title_jpn_elem}, 提取结果: {title_jpn}")
         
-        # 获取评分
+        # 获取评分 - 改进选择器
         rating = -1.0
+        # 尝试多个选择器
         rating_elem = soup.select_one(".rating")
+        if not rating_elem:
+            rating_elem = soup.select_one("span.rating")
         if rating_elem:
             try:
                 rating_text = rating_elem.get_text(strip=True)
                 rating = float(rating_text)
-            except (ValueError, AttributeError):
-                pass
+                logger.debug(f"[画廊获取] 评分: {rating_text} -> {rating}")
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"[画廊获取] 评分解析失败: {e}")
+        else:
+            logger.debug("[画廊获取] 未找到评分元素")
         
         # 获取页数和其他元数据
         pages = 0
@@ -657,20 +668,26 @@ async def fetch_gallery_info(
         gd2 = soup.select_one(".gd2")
         if gd2:
             rows = gd2.find_all("div", recursive=False)
+            logger.debug(f"[画廊获取] 在 .gd2 中找到 {len(rows)} 行元数据")
             for row in rows:
                 text = row.get_text(strip=True)
+                logger.debug(f"[画廊获取] 元数据行: {text[:50]}")
                 # 查找页数行
                 if "pages" in text.lower():
                     try:
                         parts = text.lower().split()
                         if parts:
                             pages = int(parts[0])
+                            logger.debug(f"[画廊获取] 提取页数: {pages}")
                     except (ValueError, IndexError):
                         pass
                 # 查找上传日期
                 if "posted" in text.lower() or any(month in text for month in 
                     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
                     posted = text
+                    logger.debug(f"[画廊获取] 提取上传时间: {posted}")
+        else:
+            logger.warning("[画廊获取] 未找到 .gd2 元素")
         
         # 获取标签
         tags = []
@@ -682,6 +699,7 @@ async def fetch_gallery_info(
         
         if tag_container:
             tag_rows = tag_container.find_all("div", class_=["gt1", "gt2"], recursive=False)
+            logger.debug(f"[画廊获取] 在标签容器中找到 {len(tag_rows)} 个标签行")
             for tag_row in tag_rows:
                 tag_links = tag_row.find_all("a")
                 for tag_link in tag_links:
@@ -692,19 +710,26 @@ async def fetch_gallery_info(
         # 如果还是没有找到标签，尝试其他选择器
         if not tags:
             tag_elems = soup.select("div.gtl a")
+            logger.debug(f"[画廊获取] 使用备用选择器找到 {len(tag_elems)} 个标签元素")
             for tag_elem in tag_elems:
                 tag_text = tag_elem.get_text(strip=True)
                 if tag_text:
                     tags.append(tag_text)
+        
+        logger.debug(f"[画廊获取] 共提取 {len(tags)} 个标签: {tags[:5]}")
         
         # 获取封面 URL
         cover_url = ""
         cover_elem = soup.select_one("div.thumb img")
         if cover_elem:
             src = cover_elem.get("src", "")
+            logger.debug(f"[画廊获取] 找到封面元素，src={src[:50] if src else '空'}")
             if src:
                 src_str = str(src)
                 cover_url = src_str if src_str.startswith("http") else f"{base_url_from_domain}{src_str}"
+                logger.debug(f"[画廊获取] 最终封面URL: {cover_url[:50]}")
+        else:
+            logger.warning("[画廊获取] 未找到封面图元素 (div.thumb img)")
         
         # 创建 GalleryResult 对象
         gallery = GalleryResult(
