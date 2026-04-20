@@ -14,6 +14,7 @@ from math import ceil
 from pathlib import Path
 from uuid import uuid4
 from typing import Optional
+from urllib.parse import urlparse
 
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star
@@ -34,6 +35,11 @@ from .search_logic import (
     pick_first_result,
 )
 from .search_render import SearchRenderError, render_search_results_image
+from .gallery_preview import (
+    GalleryPreviewError,
+    fetch_gallery_info,
+    render_gallery_preview_image,
+)
 from .r2 import init_r2_manager, get_r2_manager
 from .d1 import init_d1_manager, get_d1_manager
 
@@ -459,6 +465,32 @@ class EHentaiPlugin(Star):
             disowned=False,
             favorited=-1,
         )
+
+        # 获取画廊信息并发送预览图（失败时不阻断后续下载流程）
+        try:
+            gallery_domain = urlparse(gallery_url).netloc
+            logger.info(f"[链接处理] 获取画廊详细信息并渲染预览图: domain={gallery_domain}")
+            detailed_gallery = await fetch_gallery_info(
+                client,
+                gid,
+                token,
+                gallery_domain=gallery_domain,
+            )
+            if detailed_gallery:
+                gallery = detailed_gallery
+                preview_dir = Path(self.plugin_config.ehentai_download_dir) / "gallery_preview"
+                try:
+                    preview_image_path = await render_gallery_preview_image(gallery, preview_dir)
+                    yield event.image_result(str(preview_image_path))
+                    logger.info(f"[链接处理] 画廊预览图发送成功: {preview_image_path}")
+                except GalleryPreviewError as error:
+                    logger.warning(f"[链接处理] 画廊预览图渲染失败，继续下载流程: {error}")
+                except Exception as error:
+                    logger.warning(f"[链接处理] 画廊预览图发送失败，继续下载流程: {error}")
+            else:
+                logger.warning("[链接处理] 未获取到画廊详情，跳过预览图生成")
+        except Exception as error:
+            logger.warning(f"[链接处理] 预览图流程失败，继续下载流程: {error}")
         
         download_dir = Path(self.plugin_config.ehentai_download_dir)
         download_dir.mkdir(parents=True, exist_ok=True)
