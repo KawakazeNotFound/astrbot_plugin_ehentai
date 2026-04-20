@@ -2,15 +2,15 @@
   "ehentai_site": {
     "type": "string",
     "description": "E-Hentai 站点 (e 或 ex)",
-    "hint": "e 表示 e-hentai.org，ex 表示 exhentai.org",
-    "default": "e",
+    "hint": "e 表示 e-hentai.org，ex 表示 exhentai.org。建议默认用 ex（通常搜索更完整）",
+    "default": "ex",
     "options": ["e", "ex"]
   },
   "ehentai_base_url": {
     "type": "string",
     "description": "E-Hentai 基础 URL",
     "hint": "通常无需修改，程序会根据 ehentai_site 自动选择",
-    "default": "https://e-hentai.org"
+    "default": "https://exhentai.org"
   },
   "ehentai_ipb_member_id": {
     "type": "string",

@@ -16,10 +16,20 @@ export default {
     
     // 构建请求头
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'DNT': '1',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
       'Referer': baseUrl + '/',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
     };
     
     if (cookies) {
@@ -65,14 +75,24 @@ export default {
       }
       
       // 构建搜索 URL - 支持自定义基础 URL（e-hentai.org 或 exhentai.org）
+      // E-Hentai 搜索需要的参数：
+      // f_search: 搜索关键词
+      // page: 页码（可选，从 0 开始）
+      // f_cats: 分类过滤（默认不过滤）
       const searchUrl = new URL(baseUrl + '/');
-      searchUrl.searchParams.append('f_search', keyword);
+      searchUrl.searchParams.set('f_search', keyword);
       if (page > 0) {
-        searchUrl.searchParams.append('page', page.toString());
+        searchUrl.searchParams.set('page', page.toString());
       }
+      // 添加常用参数以获得完整结果
+      searchUrl.searchParams.set('advsearch', '0');
+      searchUrl.searchParams.set('f_cats', '0');
+      
+      const searchUrlStr = searchUrl.toString();
+      console.log(`[Worker] Fetching search URL: ${searchUrlStr}`);
       
       // 请求 E-Hentai 或 ExHentai
-      const response = await fetch(searchUrl.toString(), {
+      const response = await fetch(searchUrlStr, {
         method: 'GET',
         headers,
       });

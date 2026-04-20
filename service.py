@@ -660,14 +660,15 @@ class EHentaiClient:
         
         流程：
         1. 检查搜索警告页面
-        2. 定位 .itg 容器（table 或 div）
+        2. 定位容器（.itg 或 .gld）
         3. 遍历行/块元素
         4. 按官方顺序提取所有字段
         5. 去重并限制数量
         
-        支持两种布局：
-        - 旧版 table 布局：.gdt 元素作为行
-        - 新版 grid 布局：.gl1t 元素作为结果项
+        支持三种布局：
+        - 旧版 table 布局：.itg table，.gdt 作为行
+        - 中版 div 布局：.itg div，.gl1t 元素作为结果项
+        - 新版 grid 布局：.gld 网格，.gl1t 元素作为结果项（无 .itg）
         """
         soup = BeautifulSoup(body, "html.parser")
         
@@ -676,34 +677,55 @@ class EHentaiClient:
             logger.warning(f"[搜索解析] 搜索页面返回警告信息 (可能无权限访问或搜索限制)")
             return []
 
-        # Step 2: 获取 .itg 容器（对标官方 get_vdom_first_element_by_class_name）
+        # Step 2: 获取容器（优先 .itg，其次 .gld）
         itg = soup.select_one(".itg")
-        if itg is None:
-            logger.warning("[搜索解析] 未找到 .itg 容器")
-            return []
-
-        # Step 3: 遍历行/块，支持 table/旧div(.gdt) 和新div(.gl1t) 三种布局
-        nodes = []
-        if itg.name and itg.name.lower() == "table":
-            # table 布局：跳过表头
-            nodes = itg.select("tr")
-            nodes = nodes[1:] if len(nodes) > 1 else []
-            logger.debug(f"[搜索解析] 容器类型=table, 候选行数={len(nodes)}")
+        gld = soup.select_one(".gld")
+        
+        if itg is None and gld is None:
+            logger.warning("[搜索解析] 未找到 .itg 或 .gld 容器，尝试直接查找画廊链接")
+            # 最后的降级方案：直接查找所有画廊链接
+            nodes = soup.find_all("a", href=lambda x: x and "/g/" in x if x else False)
+            if not nodes:
+                logger.warning("[搜索解析] 也找不到任何画廊链接")
+                return []
+            logger.debug(f"[搜索解析] 使用降级方案，找到 {len(nodes)} 个链接")
         else:
-            # div 布局：先尝试旧的 .gdt + 新的 .gl1t 格式
-            gdt_nodes = itg.select(".gdt")  # 旧版单行布局
-            gl1t_nodes = itg.select(".gl1t")  # 新版网格布局
+            # Step 3: 遍历行/块，支持多种布局
+            nodes = []
             
-            if gdt_nodes:
-                nodes = gdt_nodes
-                logger.debug(f"[搜索解析] 使用旧版 .gdt 布局，候选行数={len(nodes)}")
-            elif gl1t_nodes:
-                nodes = gl1t_nodes
-                logger.debug(f"[搜索解析] 使用新版 .gl1t 网格布局，候选项数={len(nodes)}")
-            else:
-                # 如果都没找到，尝试取第一级子元素
-                nodes = [child for child in itg.find_all(recursive=False) if getattr(child, "name", None)]
-                logger.debug(f"[搜索解析] 使用第一级子元素，候选块数={len(nodes)}")
+            if itg is not None:
+                # 使用 .itg 容器（旧版或中版）
+                if itg.name and itg.name.lower() == "table":
+                    # table 布局：跳过表头
+                    nodes = itg.select("tr")
+                    nodes = nodes[1:] if len(nodes) > 1 else []
+                    logger.debug(f"[搜索解析] 容器类型=table, 候选行数={len(nodes)}")
+                else:
+                    # div 布局：先尝试旧的 .gdt + 新的 .gl1t 格式
+                    gdt_nodes = itg.select(".gdt")  # 旧版单行布局
+                    gl1t_nodes = itg.select(".gl1t")  # 新版网格布局
+                    
+                    if gdt_nodes:
+                        nodes = gdt_nodes
+                        logger.debug(f"[搜索解析] 使用 .itg > .gdt 布局，候选行数={len(nodes)}")
+                    elif gl1t_nodes:
+                        nodes = gl1t_nodes
+                        logger.debug(f"[搜索解析] 使用 .itg > .gl1t 网格布局，候选项数={len(nodes)}")
+                    else:
+                        # 如果都没找到，尝试取第一级子元素
+                        nodes = [child for child in itg.find_all(recursive=False) if getattr(child, "name", None)]
+                        logger.debug(f"[搜索解析] 使用 .itg 第一级子元素，候选块数={len(nodes)}")
+            
+            elif gld is not None:
+                # 使用 .gld 容器（新版网格布局，无 .itg）
+                gl1t_nodes = gld.select(".gl1t")
+                if gl1t_nodes:
+                    nodes = gl1t_nodes
+                    logger.debug(f"[搜索解析] 使用 .gld > .gl1t 新版网格布局，候选项数={len(nodes)}")
+                else:
+                    # 降级：直接取 gld 的所有子元素
+                    nodes = [child for child in gld.find_all(recursive=False) if getattr(child, "name", None)]
+                    logger.debug(f"[搜索解析] 使用 .gld 第一级子元素，候选块数={len(nodes)}")
 
         results: list[GalleryResult] = []
         seen: set[str] = set()
@@ -711,30 +733,40 @@ class EHentaiClient:
         # Step 4: 循环解析每一行/块（对标官方 parse_gallery_info）
         for idx, row in enumerate(nodes, 1):
             # 4.1: 获取标题链接（对标官方的三层备选方案）
-            # 兼容两种布局：
-            # - 旧版：glname 在 row 内，链接在 glname 内
-            # - 新版：glname 被包在链接内 <a><div class="glname">...</div></a>
+            # 兼容多种情况：
+            # - 如果 row 本身就是 <a> 链接，直接使用
+            # - 如果 row 是容器，在其中查找链接
             
             title_anchor = None
             
-            # 先尝试新版布局：直接查找 <a href...> 包含 /g/
-            title_anchor = row.select_one("a[href*='/g/'], a[href*='/mpv/']")
+            # 情况 1：row 本身是链接
+            if hasattr(row, 'name') and row.name and row.name.lower() == 'a':
+                if "/g/" in row.get("href", "") or "/mpv/" in row.get("href", ""):
+                    title_anchor = row
+            
+            # 情况 2：row 是容器，查找内部链接
+            if not title_anchor:
+                # 先尝试新版布局：直接查找 <a href...> 包含 /g/
+                title_anchor = row.select_one("a[href*='/g/'], a[href*='/mpv/']") if hasattr(row, 'select_one') else None
             
             if not title_anchor:
                 # 尝试旧版布局：在 .glname 内查找 <a>
-                glname = row.select_one(".glname")
-                if glname:
-                    title_anchor = glname.select_one("a[href]")
+                if hasattr(row, 'select_one'):
+                    glname = row.select_one(".glname")
+                    if glname:
+                        title_anchor = glname.select_one("a[href]")
 
             if not title_anchor:
-                for link in row.find_all("a", href=True):
-                    href = link.get("href", "").strip()
-                    if href and re.search(r"/(?:g|mpv)/\d+/[0-9a-f]{10}", href):
-                        title_anchor = link
-                        break
+                # 最后的尝试：遍历所有链接
+                if hasattr(row, 'find_all'):
+                    for link in row.find_all("a", href=True):
+                        href = link.get("href", "").strip()
+                        if href and re.search(r"/(?:g|mpv)/\d+/[0-9a-f]{10}", href):
+                            title_anchor = link
+                            break
 
             if not title_anchor:
-                logger.debug(f"[搜索解析] 第 {idx} 行: 未找到标题链接")
+                logger.debug(f"[搜索解析] 第 {idx} 项: 未找到标题链接")
                 continue
             
             # 4.2: 提取标题和链接
@@ -743,7 +775,7 @@ class EHentaiClient:
             title = title_anchor.get_text(" ", strip=True)
             
             if not href_raw or not title:
-                logger.debug(f"[搜索解析] 第 {idx} 行: 标题或链接为空")
+                logger.debug(f"[搜索解析] 第 {idx} 项: 标题或链接为空")
                 continue
 
             # 重要：清理标题中的 HTML 实体和 f: 标签（对标官方 unescape）
@@ -766,22 +798,38 @@ class EHentaiClient:
             seen.add(dedupe_key)
             
             # 4.5: 获取缩略图 URL（对标官方：data-src 优先，过滤 base64）
-            img = row.select_one("img[data-src], img[src]")
+            img = None
             cover_url = ""
-            if img:
-                cover_url = (img.get("data-src") or img.get("src") or "").strip()
-                if cover_url.startswith("data:image"):
-                    cover_url = ""
+            # 只有在 row 是容器时才尝试查找图片
+            if hasattr(row, 'select_one') and row.name and row.name.lower() != 'a':
+                img = row.select_one("img[data-src], img[src]")
+                if img:
+                    cover_url = (img.get("data-src") or img.get("src") or "").strip()
+                    if cover_url.startswith("data:image"):
+                        cover_url = ""
             
             # 4.6: 提取所有元数据字段（对标官方）
-            category = self._parse_category(row)
-            rating = self._parse_rating(row)
-            posted = self._parse_posted(row)
-            uploader = self._parse_uploader(row)
-            pages = self._parse_pages(row)
-            tags = self._parse_tags(row)
-            thumb_width, thumb_height = self._parse_thumb_resolution(row)
-            disowned = self._parse_disowned(row)
+            # 只有在 row 是容器时才尝试提取这些字段
+            if hasattr(row, 'select_one') and row.name and row.name.lower() != 'a':
+                category = self._parse_category(row)
+                rating = self._parse_rating(row)
+                posted = self._parse_posted(row)
+                uploader = self._parse_uploader(row)
+                pages = self._parse_pages(row)
+                tags = self._parse_tags(row)
+                thumb_width, thumb_height = self._parse_thumb_resolution(row)
+                disowned = self._parse_disowned(row)
+            else:
+                # 如果 row 是直接链接，使用默认值
+                category = ""
+                rating = -1
+                posted = ""
+                uploader = ""
+                pages = -1
+                tags = []
+                thumb_width = 0
+                thumb_height = 0
+                disowned = False
             
             # 5. 组装完整结果（对标官方 BaseGalleryInfo）
             result = GalleryResult(
@@ -976,10 +1024,61 @@ class EHentaiClient:
                     except Exception: pass
                 return results
 
+            # 检查 HTML 是否包含搜索结果标签
+            if "class=\"itg" not in raw_html and "class='itg" not in raw_html:
+                # 调试模式：打印部分 HTML 以诊断问题
+                logger.warning(f"[Worker搜索] HTML 中未找到 .itg 容器，可能是登录页或错误页")
+                logger.debug(f"[Worker搜索] HTML 样本 (前 500 字符):\n{raw_html[:500]}")
+                
+                # 检查是否是登录页面
+                if "login" in raw_html.lower() or "password" in raw_html.lower():
+                    logger.error("[Worker搜索] 检测到登录页面，Cookie 可能已过期或无效")
+                    raise RuntimeError("E-Hentai 返回登录页面，Cookie 可能已过期")
+                
+                # 检查是否是 IP 被限制页面
+                if "blocked" in raw_html.lower() or "restricted" in raw_html.lower():
+                    logger.error("[Worker搜索] 检测到 IP 被限制")
+                    raise RuntimeError("E-Hentai IP 可能被限制，请检查网络或使用代理")
+                
+                # 其他情况，记录警告但继续尝试解析
+                logger.warning("[Worker搜索] 无法确定返回的是什么页面，继续尝试本地解析...")
+
             logger.debug(f"[Worker搜索] 成功获取 HTML (大小: {len(raw_html)} 字节)，开始本地解析详尽元数据...")
             
             # 本地解析，能获取到完整的 缩略图、评分、发布时间、上传者、标签等
             results = self._parse_search_results(raw_html, limit)
+            
+            # 如果 Worker 返回空结果，尝试检测是否是网络问题
+            if not results:
+                logger.warning("[Worker搜索] 本地解析得到 0 条结果，尝试检测 HTML 类型...")
+                
+                # 输出 HTML 样本用于诊断
+                logger.debug(f"[Worker搜索] HTML 前 800 字符:\n{raw_html[:800]}")
+                
+                # 检查是否是登录页面
+                if "login" in raw_html.lower() or "password" in raw_html.lower() or "cookie" in raw_html.lower():
+                    logger.error("[Worker搜索] 检测到登录页面，Cookie 可能已过期或无效")
+                    raise RuntimeError("E-Hentai 返回登录页面，Cookie 可能已过期")
+                
+                # 检查是否是 IP 被限制页面
+                if "blocked" in raw_html.lower() or "restricted" in raw_html.lower() or "limit" in raw_html.lower():
+                    logger.error("[Worker搜索] 检测到 IP 被限制或访问受限")
+                    raise RuntimeError("E-Hentai 检测到受限访问，请检查网络或稍后重试")
+                
+                # 检查是否是错误页面（404 等）
+                if "404" in raw_html or "not found" in raw_html.lower() or "error" in raw_html.lower():
+                    logger.warning("[Worker搜索] 检测到错误页面响应，降级到直连")
+                    raise RuntimeError("Worker 返回错误页面")
+                
+                # 检查是否包含任何画廊链接
+                if "/g/" not in raw_html:
+                    logger.warning("[Worker搜索] HTML 中不包含任何 /g/ 链接，可能是错误的响应")
+                    raise RuntimeError("Worker 返回的 HTML 不包含画廊链接")
+                
+                # 如果都不是，可能是 E-Hentai 搜索就是无结果，或者 HTML 格式与预期不符
+                logger.warning("[Worker搜索] 无法确定返回的是什么页面，将降级到直连模式尝试直接搜索")
+                raise RuntimeError("Worker 搜索无结果，可能需要更新解析器或 Worker 实现")
+            
             logger.info(f"[Worker搜索] 成功从 HTML 解析出 {len(results)} 条完整结果")
             return results
             
@@ -993,7 +1092,7 @@ class EHentaiClient:
     async def search(
         self, keyword: str, limit: int = 5, options: Optional[SearchOptions] = None, eh_page: int = 0
     ) -> list[GalleryResult]:
-        logger.info(f"[搜索] 开始搜索: keyword='{keyword}', limit={limit}, backend={self.backend}")
+        logger.info(f"[搜索] 开始搜索: keyword='{keyword}', limit={limit}, site={self.site}, backend={self.backend}")
         
         # 如果配置了 Cloudflare Worker，使用 Worker 搜索
         if self.cloudflare_worker_url:
@@ -1001,6 +1100,36 @@ class EHentaiClient:
             try:
                 results = await self._search_via_worker(keyword, limit, options, eh_page)
                 logger.info(f"[搜索] Worker 搜索成功，获得 {len(results)} 条结果")
+                
+                # 如果 Worker 搜索返回空结果，尝试切换站点重新搜索
+                if not results:
+                    logger.warning(f"[搜索] Worker 搜索在站点 {self.site} 返回 0 结果，尝试切换到备选站点")
+                    original_site = self.site
+                    original_base_url = self.base_url
+                    
+                    try:
+                        # 切换站点
+                        if self.site == "ex":
+                            self.site = "e"
+                            self.base_url = "https://e-hentai.org"
+                            logger.info("[搜索] 已切换到 e-hentai.org，重新搜索...")
+                        else:
+                            self.site = "ex"
+                            self.base_url = "https://exhentai.org"
+                            logger.info("[搜索] 已切换到 exhentai.org，重新搜索...")
+                        
+                        # 重新搜索
+                        results = await self._search_via_worker(keyword, limit, options, eh_page)
+                        logger.info(f"[搜索] 备选站点搜索完成，获得 {len(results)} 条结果")
+                        
+                    finally:
+                        # 恢复原始站点设置（这样不会影响后续的其他搜索）
+                        # 但如果新站点有结果，可以保持使用该站点
+                        if not results:
+                            self.site = original_site
+                            self.base_url = original_base_url
+                            logger.info(f"[搜索] 两个站点都无结果，恢复原始站点设置")
+                
                 await self._enrich_japanese_titles(results)
                 return results
             except Exception as error:
@@ -1089,6 +1218,49 @@ class EHentaiClient:
             resp = await client.get(search_url, headers=self._headers_for_url(search_url))
         logger.info(f"[搜索] 搜索成功，状态码: {resp.status_code}")
         results = self._search_from_response(resp, limit)
+        
+        # 如果搜索返回空结果，尝试切换站点重新搜索
+        if not results:
+            logger.warning(f"[搜索] 直连搜索在站点 {self.site} 返回 0 结果，尝试切换到备选站点")
+            original_site = self.site
+            original_base_url = self.base_url
+            
+            try:
+                # 切换站点
+                if self.site == "ex":
+                    self.site = "e"
+                    self.base_url = "https://e-hentai.org"
+                    logger.info("[搜索] 已切换到 e-hentai.org，重新搜索...")
+                else:
+                    self.site = "ex"
+                    self.base_url = "https://exhentai.org"
+                    logger.info("[搜索] 已切换到 exhentai.org，重新搜索...")
+                
+                # 重新构建搜索 URL 并搜索
+                search_url = self._build_search_url(keyword, options, eh_page)
+                async with httpx.AsyncClient(
+                    timeout=self.timeout,
+                    verify=False,
+                    follow_redirects=True,
+                ) as client:
+                    logger.debug(f"[搜索] 使用备选站点发送搜索请求")
+                    resp = await client.get(search_url, headers=self._headers_for_url(search_url))
+                logger.info(f"[搜索] 备选站点搜索完成，状态码: {resp.status_code}")
+                results = self._search_from_response(resp, limit)
+                
+            except Exception as e:
+                logger.error(f"[搜索] 备选站点搜索失败: {type(e).__name__}: {e}")
+                # 备选站点搜索失败，恢复原始设置
+                self.site = original_site
+                self.base_url = original_base_url
+                # 返回空结果而不是抛出异常
+            finally:
+                # 如果新站点没有结果，恢复原始站点设置
+                if not results:
+                    self.site = original_site
+                    self.base_url = original_base_url
+                    logger.info(f"[搜索] 两个站点都无结果，恢复原始站点设置")
+        
         await self._enrich_japanese_titles(results)
         return results
 
