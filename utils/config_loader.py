@@ -100,22 +100,6 @@ class PluginConfig:
         return self.get('ehentai_cloudflare_worker_url', '')
     
     @property
-    def ehentai_stream_upload_first(self) -> bool:
-        return self.get('ehentai_stream_upload_first', True)
-    
-    @property
-    def ehentai_stream_chunk_size(self) -> int:
-        return self.get('ehentai_stream_chunk_size', 256 * 1024)
-    
-    @property
-    def ehentai_upload_to_group_file(self) -> bool:
-        return self.get('ehentai_upload_to_group_file', False)
-    
-    @property
-    def ehentai_prefer_r2_over_group_file(self) -> bool:
-        return self.get('ehentai_prefer_r2_over_group_file', True)
-    
-    @property
     def ehentai_search_f_cats(self) -> int:
         return self.get('ehentai_search_f_cats', 0)
     

@@ -67,27 +67,6 @@
     "default": "",
     "hint": "例如：https://eh.shirasuazusa.workers.dev/ 用于绕过地域限制，留空则使用直接连接"
   },
-  "ehentai_stream_upload_first": {
-    "type": "bool",
-    "description": "优先使用流式上传",
-    "default": true
-  },
-  "ehentai_stream_chunk_size": {
-    "type": "int",
-    "description": "流式上传分片大小（字节）",
-    "default": 262144
-  },
-  "ehentai_upload_to_group_file": {
-    "type": "bool",
-    "description": "尝试上传到群文件",
-    "default": false,
-    "hint": "如果 NapCat 不稳定，建议关闭"
-  },
-  "ehentai_prefer_r2_over_group_file": {
-    "type": "bool",
-    "description": "如果 R2 可用，优先使用 R2",
-    "default": true
-  },
   "ehentai_search_f_cats": {
     "type": "int",
     "description": "搜索分类过滤（f_cats）",

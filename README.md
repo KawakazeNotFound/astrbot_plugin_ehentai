@@ -67,8 +67,11 @@
 # 直接根据关键词下载搜索结果的第一本（Resample 版本）
 /download 关键词
 
-# 下载原始版本（文件较大）
+# 下载原始版本（文件较大，支持 -original 和 --original）
 /download -original 1
+
+# 下面这种写法也会被识别
+/download --original 1
 ```
 
 ## 注意事项
