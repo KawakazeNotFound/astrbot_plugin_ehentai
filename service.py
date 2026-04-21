@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 import ssl
 from dataclasses import dataclass
@@ -96,6 +97,7 @@ class ArchiveOption:
     size: str
     cost: str
     is_hath: bool
+    submit_value: str = ""
 
 
 def _safe_error_text(error: Exception) -> str:
@@ -1375,36 +1377,59 @@ class EHentaiClient:
         soup = BeautifulSoup(body, "html.parser")
 
         options: list[ArchiveOption] = []
-        archive_blocks = soup.select("#db > div > div")
-        for block in archive_blocks:
-            style = (block.get("style") or "").replace(" ", "").lower()
-            if "color:#cccccc" in style:
+        seen_keys: set[tuple[str, bool]] = set()
+
+        # 新版页面中按钮和信息可能不在固定 strong 结构里，按 form 为中心解析更稳健。
+        archive_forms = soup.select("#db form[action*='archiver.php'], #db form")
+        for form in archive_forms:
+            hidden_input = form.select_one("input[name='dltype'][value], input[name='hathdl_xres'][value]")
+            if hidden_input is None:
                 continue
 
-            input_tag = block.select_one("form input[value]")
-            name_tag = block.select_one("form div input[value]")
-            size_tag = block.select_one("p strong")
-            cost_tag = block.select_one("div strong")
-            if not input_tag or not size_tag or not cost_tag:
-                continue
-
-            res = input_tag.get("value", "").strip()
+            input_name = str(hidden_input.get("name", "")).strip().lower()
+            res = str(hidden_input.get("value", "")).strip()
             if not res:
                 continue
 
-            name_text = ""
-            if name_tag is not None:
-                name_text = name_tag.get("value", "").strip()
-            if not name_text:
-                name_text = block.get_text(" ", strip=True)
+            submit_tag = form.select_one("input[type='submit'][name='dlcheck'][value], button[name='dlcheck']")
+            submit_value = ""
+            if submit_tag is not None:
+                submit_value = str(submit_tag.get("value", "")).strip()
+                if not submit_value:
+                    submit_value = submit_tag.get_text(" ", strip=True)
+
+            container = form.find_parent("div")
+            container_text = container.get_text(" ", strip=True) if container else form.get_text(" ", strip=True)
+            container_style = str(container.get("style", "")).replace(" ", "").lower() if container else ""
+            # 灰色块通常是不可用项，且没有提交按钮。
+            if "color:#cccccc" in container_style and not submit_value:
+                continue
+
+            size_match = re.search(r"Estimated\s*Size\s*:?\s*([0-9.]+\s*[KMGTP]?i?B)", container_text, flags=re.IGNORECASE)
+            cost_match = re.search(
+                r"Download\s*Cost\s*:?\s*([A-Za-z0-9., ]+?)(?:Estimated\s*Size|$)",
+                container_text,
+                flags=re.IGNORECASE,
+            )
+            size_text = size_match.group(1).strip() if size_match else "-"
+            cost_text = cost_match.group(1).strip().replace(",", "") if cost_match else "Unknown"
+
+            is_hath = input_name == "hathdl_xres" or "h@h" in container_text.lower()
+            name_text = submit_value or form.get_text(" ", strip=True) or f"Archive {res}"
+
+            option_key = (res, is_hath)
+            if option_key in seen_keys:
+                continue
+            seen_keys.add(option_key)
 
             options.append(
                 ArchiveOption(
                     res=res,
                     name=name_text,
-                    size=size_tag.get_text(" ", strip=True),
-                    cost=cost_tag.get_text(" ", strip=True).replace(",", ""),
-                    is_hath=False,
+                    size=size_text,
+                    cost=cost_text,
+                    is_hath=is_hath,
+                    submit_value=submit_value,
                 )
             )
 
@@ -1414,6 +1439,10 @@ class EHentaiClient:
             flags=re.IGNORECASE,
         )
         for match in hath_pattern.finditer(body):
+            option_key = (match.group(1), True)
+            if option_key in seen_keys:
+                continue
+            seen_keys.add(option_key)
             options.append(
                 ArchiveOption(
                     res=match.group(1),
@@ -1425,6 +1454,32 @@ class EHentaiClient:
             )
 
         return options
+
+    def _log_archive_parse_diagnostics(self, body: str) -> None:
+        try:
+            soup = BeautifulSoup(body, "html.parser")
+            title_elem = soup.select_one("title")
+            page_title = title_elem.get_text(" ", strip=True) if title_elem else "(no-title)"
+            form_count = len(soup.select("#db form"))
+            dltype_count = len(soup.select("#db input[name='dltype'][value]"))
+            hath_count = len(soup.select("#db input[name='hathdl_xres'][value]"))
+
+            logger.warning(
+                "[存档] 解析诊断: title=%s, forms=%d, dltype_inputs=%d, hath_inputs=%d, need_hath=%s, insufficient_funds=%s",
+                page_title,
+                form_count,
+                dltype_count,
+                hath_count,
+                str(NEED_HATH_CLIENT_MSG in body),
+                str(INSUFFICIENT_FUNDS_MSG in body),
+            )
+
+            db_block = soup.select_one("#db")
+            if db_block is not None:
+                snippet = re.sub(r"\s+", " ", db_block.get_text(" ", strip=True))[:360]
+                logger.debug(f"[存档] #db 文本片段: {snippet}")
+        except Exception as error:
+            logger.debug(f"[存档] 解析诊断失败: {type(error).__name__}: {error}")
 
     async def _request_archive_download_url(
         self,
@@ -1442,7 +1497,9 @@ class EHentaiClient:
             payload["hathdl_xres"] = archive_option.res
         else:
             payload["dltype"] = archive_option.res
-            if archive_option.res == "org":
+            if archive_option.submit_value:
+                payload["dlcheck"] = archive_option.submit_value
+            elif archive_option.res == "org":
                 payload["dlcheck"] = "Download Original Archive"
             else:
                 payload["dlcheck"] = "Download Resample Archive"
@@ -1468,6 +1525,11 @@ class EHentaiClient:
             soup = BeautifulSoup(body, "html.parser")
             continue_link = soup.select_one("#continue a[href]")
             if continue_link is None:
+                # 兼容部分页面不展示 #continue，直接在脚本或正文中给出 hath 下载地址。
+                direct_link_match = re.search(r"https?://[A-Za-z0-9.-]+\.hath\.network/archive/[^\"'<>\s]+", body)
+                if direct_link_match:
+                    direct_link = html.unescape(direct_link_match.group(0))
+                    return direct_link if "?start=" in direct_link else f"{direct_link}?start=1"
                 return None
 
             href = continue_link.get("href", "").strip()
@@ -1519,6 +1581,7 @@ class EHentaiClient:
                     options = self._parse_archive_options(archive_page)
                     if not options:
                         logger.warning(f"[存档] 未找到可用的存档选项")
+                        self._log_archive_parse_diagnostics(archive_page)
                         return None
 
                     preferred = self._select_archive_option(options, prefer_original)
@@ -1550,6 +1613,7 @@ class EHentaiClient:
                             options = self._parse_archive_options(archive_page)
                             if not options:
                                 logger.warning(f"[存档] 未找到可用的存档选项")
+                                self._log_archive_parse_diagnostics(archive_page)
                                 return None
 
                             preferred = self._select_archive_option(options, prefer_original)
@@ -1580,6 +1644,7 @@ class EHentaiClient:
             options = self._parse_archive_options(archive_page)
             if not options:
                 logger.warning(f"[存档] 未找到可用的存档选项")
+                self._log_archive_parse_diagnostics(archive_page)
                 return None
 
             preferred = self._select_archive_option(options, prefer_original)
