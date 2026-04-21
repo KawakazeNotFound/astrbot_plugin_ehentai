@@ -4,8 +4,8 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Optional
 
-from .service import EHentaiClient, GalleryResult, SearchOptions
-from .logger_compat import get_logger
+from ..core.service import EHentaiClient, GalleryResult, SearchOptions
+from ..utils.logger_compat import get_logger
 
 
 def _get_logger():

@@ -16,8 +16,8 @@ import httpx
 from httpx import ConnectError as HttpxConnectError
 from bs4 import BeautifulSoup
 
-from .service import EHentaiClient, GalleryResult
-from .logger_compat import get_logger
+from ..core.service import EHentaiClient, GalleryResult
+from ..utils.logger_compat import get_logger
 
 _COVER_HEADERS = {
     "User-Agent": (
@@ -117,7 +117,7 @@ def _render_single_item_template(template_text: str, item: dict[str, Any]) -> st
 
 def _get_preview_template_path() -> Path:
     """获取预览模板路径"""
-    return Path(__file__).resolve().parent / "search_template.html"
+    return Path(__file__).resolve().parent / "templates" / "search_template.html"
 
 
 def _build_gallery_preview_html(

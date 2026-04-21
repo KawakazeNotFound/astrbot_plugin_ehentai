@@ -11,8 +11,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .logger_compat import get_logger
-from .search_logic import build_search_render_payload
+from ..utils.logger_compat import get_logger
+from ..logic.search_logic import build_search_render_payload
 
 _COVER_HEADERS = {
     "User-Agent": (
@@ -66,6 +66,7 @@ async def _fetch_cover_as_data_uri(
                 if attempt >= _COVER_FETCH_RETRY:
                     return ""
                 await asyncio.sleep(0.25 * attempt)
+    return ""
 
 ITEM_BLOCK_RE = re.compile(r"<!-- \{\{#items\}\} -->(.*?)<!-- \{\{/items\}\} -->", re.S)
 PLACEHOLDER_RE = re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
@@ -112,12 +113,12 @@ def _render_template(template_text: str, payload: dict[str, Any]) -> str:
 
 def _project_root() -> Path:
     """获取插件根目录（AstrBot 版本）"""
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
 
 def _template_path() -> Path:
     """获取搜索结果模板文件路径"""
-    return _project_root() / "search_template.html"
+    return Path(__file__).resolve().parent / "templates" / "search_template.html"
 
 
 def _build_template_payload(

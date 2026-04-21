@@ -13,7 +13,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .network import BUILT_IN_HOSTS
-from .logger_compat import get_logger
+from ..utils.logger_compat import get_logger
 
 
 def _get_logger():

@@ -24,24 +24,24 @@ from astrbot.api.message_components import (
 )
 from astrbot.api.event import MessageChain
 
-from .config_loader import PluginConfig
-from .logger_compat import init_logger, get_logger
-from .service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
-from .search_logic import (
+from .utils.config_loader import PluginConfig
+from .utils.logger_compat import init_logger, get_logger
+from .core.service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
+from .logic.search_logic import (
     SearchExecutionError,
     execute_gallery_search,
     execute_gallery_search_paged,
     format_search_results_message,
     pick_first_result,
 )
-from .search_render import SearchRenderError, render_search_results_image
-from .gallery_preview import (
+from .render.search_render import SearchRenderError, render_search_results_image
+from .render.gallery_preview import (
     GalleryPreviewError,
     fetch_gallery_info,
     render_gallery_preview_image,
 )
-from .r2 import init_r2_manager, get_r2_manager
-from .d1 import init_d1_manager, get_d1_manager
+from .storage.r2 import init_r2_manager, get_r2_manager
+from .storage.d1 import init_d1_manager, get_d1_manager
 
 
 class EHentaiPlugin(Star):
