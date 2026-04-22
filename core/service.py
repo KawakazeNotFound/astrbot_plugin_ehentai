@@ -1697,10 +1697,9 @@ class EHentaiClient:
             
             logger.debug(f"[下载] wget 下载完成")
         except asyncio.TimeoutError:
-            logger.error(f"[下载] wget 下载超时")
             raise RuntimeError("wget 下载超时")
-        except Exception as e:
-            logger.error(f"[下载] wget 执行失败: {e}")
+        except Exception:
+            # 由调用方决定日志级别：可作为首选失败回退，或作为最终失败上抛
             raise
 
     async def download_file(self, url: str, save_path: Path) -> Path:
