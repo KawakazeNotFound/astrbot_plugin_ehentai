@@ -63,9 +63,9 @@
   },
   "ehentai_cloudflare_worker_url": {
     "type": "string",
-    "description": "Cloudflare Worker 搜索代理 URL（可选）",
+    "description": "Cloudflare Worker 代理 URL（可选）",
     "default": "",
-    "hint": "例如：https://eh.shirasuazusa.workers.dev/ 用于绕过地域限制，留空则使用直接连接"
+    "hint": "例如：https://eh.shirasuazusa.workers.dev/ 用于绕过地域限制，留空则使用直接连接。/search 与 /imgsearch 都可使用。"
   },
   "ehentai_stream_upload_first": {
     "type": "bool",

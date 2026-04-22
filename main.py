@@ -14,8 +14,9 @@ from math import ceil
 from pathlib import Path
 from uuid import uuid4
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
+import httpx
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star
 from astrbot.api import logger as astrbot_logger, AstrBotConfig
@@ -23,13 +24,15 @@ from astrbot.api.message_components import (
     Plain, Image, At, File
 )
 from astrbot.api.event import MessageChain
+from astrbot.core.utils.session_waiter import session_waiter, SessionController
 
 from .utils.config_loader import PluginConfig
 from .utils.logger_compat import init_logger, get_logger
-from .core.service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
+from .core.service import EHentaiClient, ImageSearchOptions, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
 from .logic.search_logic import (
     SearchExecutionError,
     execute_gallery_search,
+    execute_gallery_image_search_paged,
     execute_gallery_search_paged,
     format_search_results_message,
     pick_first_result,
@@ -156,6 +159,135 @@ class EHentaiPlugin(Star):
             f_spf=0,
             f_spt=0,
         )
+
+    @staticmethod
+    def _build_session_key(event: AstrMessageEvent) -> str:
+        sender_id = getattr(event.message_obj.sender, "user_id", "unknown")
+        group_id = getattr(event.message_obj, "group_id", "private")
+        return f"{group_id}_{sender_id}"
+
+    @staticmethod
+    def _extract_image_reference_from_event(event: AstrMessageEvent) -> str:
+        message_chain = getattr(event.message_obj, "message", None) or []
+        for component in message_chain:
+            value = EHentaiPlugin._extract_image_reference_from_component(component)
+            if value:
+                return value
+
+        return ""
+
+    @staticmethod
+    def _extract_image_reference_from_component(component) -> str:
+        comp_type = str(getattr(component, "type", "")).lower()
+        if not comp_type and isinstance(component, dict):
+            comp_type = str(component.get("type", "") or "").lower()
+
+        class_name = component.__class__.__name__.lower()
+        is_image = "image" in comp_type or class_name == "image"
+        if is_image:
+            for attr in ("file", "url", "path"):
+                value = ""
+                if isinstance(component, dict):
+                    value = str(component.get(attr, "") or "").strip()
+                else:
+                    value = str(getattr(component, attr, "") or "").strip()
+                if value:
+                    return value
+
+        # 兼容引用消息：Reply 组件中可能携带 chain，递归查找其中的图片段
+        is_reply = "reply" in comp_type or class_name == "reply"
+        if is_reply:
+            nested_chain = []
+            if isinstance(component, dict):
+                nested_chain = component.get("chain") or []
+            else:
+                nested_chain = getattr(component, "chain", None) or []
+            for nested in nested_chain:
+                nested_value = EHentaiPlugin._extract_image_reference_from_component(nested)
+                if nested_value:
+                    return nested_value
+
+        return ""
+
+    @staticmethod
+    def _looks_like_image_source(text: str) -> bool:
+        raw = (text or "").strip()
+        if not raw:
+            return False
+        if raw.startswith(("http://", "https://", "file://", "data:image/", "base64://")):
+            return True
+        candidate = Path(raw).expanduser()
+        return candidate.exists() and candidate.is_file()
+
+    async def _materialize_image_source(self, source: str, output_dir: Path) -> tuple[Path, bool]:
+        """将图片来源（URL/本地路径/base64）转为可上传文件。返回 (path, should_cleanup)。"""
+        raw = (source or "").strip()
+        if not raw:
+            raise RuntimeError("未提供图片来源")
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if raw.startswith("file://"):
+            file_path = Path(unquote(urlparse(raw).path))
+            if not file_path.exists() or not file_path.is_file():
+                raise RuntimeError(f"图片文件不存在: {file_path}")
+            return file_path, False
+
+        local_candidate = Path(raw).expanduser()
+        if local_candidate.exists() and local_candidate.is_file():
+            return local_candidate, False
+
+        if raw.startswith("data:image/"):
+            header, sep, payload = raw.partition(",")
+            if not sep or not payload:
+                raise RuntimeError("data:image 格式不正确")
+
+            ext_match = re.search(r"data:image/([a-zA-Z0-9.+-]+)", header)
+            ext = ext_match.group(1).lower() if ext_match else "jpg"
+            if ext == "jpeg":
+                ext = "jpg"
+
+            temp_path = output_dir / f"imgsearch_{uuid4().hex}.{ext}"
+            temp_path.write_bytes(base64.b64decode(payload, validate=False))
+            return temp_path, True
+
+        if raw.startswith("base64://"):
+            payload = raw[len("base64://"):]
+            temp_path = output_dir / f"imgsearch_{uuid4().hex}.jpg"
+            temp_path.write_bytes(base64.b64decode(payload, validate=False))
+            return temp_path, True
+
+        if raw.startswith("http://") or raw.startswith("https://"):
+            async with httpx.AsyncClient(
+                timeout=self.plugin_config.ehentai_timeout,
+                verify=False,
+                follow_redirects=True,
+                proxy=self.plugin_config.ehentai_proxy or None,
+            ) as client:
+                response = await client.get(
+                    raw,
+                    headers={"User-Agent": CHROME_DESKTOP_USER_AGENT},
+                )
+                response.raise_for_status()
+
+            suffix = Path(urlparse(raw).path).suffix.lower()
+            if not suffix or len(suffix) > 8:
+                content_type = (response.headers.get("Content-Type", "").split(";", 1)[0]).strip().lower()
+                suffix_map = {
+                    "image/jpeg": ".jpg",
+                    "image/jpg": ".jpg",
+                    "image/png": ".png",
+                    "image/webp": ".webp",
+                    "image/gif": ".gif",
+                    "image/bmp": ".bmp",
+                }
+                suffix = suffix_map.get(content_type, ".jpg")
+
+            temp_path = output_dir / f"imgsearch_{uuid4().hex}{suffix}"
+            temp_path.write_bytes(response.content)
+            return temp_path, True
+
+        raise RuntimeError("无法识别图片来源，请发送图片或提供 http/https 图片链接")
     
     @filter.command("search")
     async def handle_search(self, event: AstrMessageEvent):
@@ -201,9 +333,7 @@ class EHentaiPlugin(Star):
                 options,
             )
             # 记录搜索结果到当前会话（用于序号下载）
-            sender_id = getattr(event.message_obj.sender, "user_id", "unknown")
-            group_id = getattr(event.message_obj, "group_id", "private")
-            session_key = f"{group_id}_{sender_id}"
+            session_key = self._build_session_key(event)
             self._last_search_results[session_key] = page_results
         except SearchExecutionError as error:
             yield event.plain_result(f"搜索失败: {error}")
@@ -240,6 +370,164 @@ class EHentaiPlugin(Star):
             logger.warning(f"[搜索处理] 搜索渲染图发送失败，回退文本: {error}")
             message_text = format_search_results_message(
                 keyword, page_results, _RESULTS_PER_PAGE, bot_page=bot_page, total_fetched=total_fetched
+            )
+            yield event.plain_result(message_text)
+
+    @filter.command("imgsearch")
+    async def handle_image_search(self, event: AstrMessageEvent):
+        """上传图片进行搜索。
+
+        用法:
+        /imgsearch [图片URL] [--page N] [--similar] [--covers] [--expunged]
+        或发送 /imgsearch 并附带一张图片。
+        """
+        logger = get_logger()
+
+        raw = event.message_str.strip()
+        if raw.startswith("imgsearch "):
+            raw = raw[10:]
+        elif raw == "imgsearch":
+            raw = ""
+
+        page_match = re.search(r"--page\s+(\d+)", raw)
+        bot_page = int(page_match.group(1)) if page_match else 1
+        if bot_page < 1:
+            bot_page = 1
+
+        use_similarity_scan = bool(re.search(r"--(?:similar|uss)\b", raw))
+        only_search_covers = bool(re.search(r"--covers\b", raw))
+        show_expunged = bool(re.search(r"--(?:exp|expunged)\b", raw))
+
+        cleaned = re.sub(r"--page\s+\d+", "", raw)
+        cleaned = re.sub(r"--(?:similar|uss|covers|exp|expunged)\b", "", cleaned)
+        source_arg = cleaned.strip()
+
+        image_source = source_arg or self._extract_image_reference_from_event(event)
+        if not image_source:
+            yield event.plain_result("请在 60 秒内发送一张图片，或发送图片 URL。")
+
+            @session_waiter(timeout=60, record_history_chains=False)
+            async def wait_for_image(controller: SessionController, wait_event: AstrMessageEvent):
+                nonlocal image_source
+
+                waited_source = self._extract_image_reference_from_event(wait_event)
+                if not waited_source:
+                    text_source = wait_event.message_str.strip()
+                    if self._looks_like_image_source(text_source):
+                        waited_source = text_source
+
+                if waited_source:
+                    image_source = waited_source
+                    controller.stop()
+                    return
+
+                await wait_event.send(wait_event.plain_result("未检测到图片或 URL，请继续发送。"))
+                controller.keep(timeout=60, reset_timeout=True)
+
+            try:
+                await wait_for_image(event)
+            except TimeoutError:
+                yield event.plain_result("等待超时：未收到图片或图片 URL。")
+                event.stop_event()
+                return
+            except Exception as error:
+                logger.warning(f"[图片搜索处理] 等待图片输入失败: {error}")
+                yield event.plain_result(f"等待图片输入失败: {error}")
+                event.stop_event()
+                return
+            finally:
+                event.stop_event()
+
+        if not image_source:
+            yield event.plain_result(
+                "用法: /imgsearch [图片URL] [--page N] [--similar] [--covers] [--expunged]\n"
+                "也可以直接发送: /imgsearch + 一张图片"
+            )
+            return
+
+        image_input_dir = Path(self.plugin_config.ehentai_download_dir) / "image_search_input"
+        image_path: Optional[Path] = None
+        should_cleanup = False
+
+        try:
+            image_path, should_cleanup = await self._materialize_image_source(image_source, image_input_dir)
+        except Exception as error:
+            logger.warning(f"[图片搜索处理] 读取图片失败: {error}")
+            yield event.plain_result(f"读取图片失败: {error}")
+            return
+
+        configured_results_per_page = self.plugin_config.ehentai_max_results
+        _RESULTS_PER_PAGE = configured_results_per_page if configured_results_per_page > 0 else 5
+        _MAX_EH_PAGES = 3
+
+        client = self.build_client()
+        image_options = ImageSearchOptions(
+            use_similarity_scan=use_similarity_scan,
+            only_search_covers=only_search_covers,
+            show_expunged=show_expunged,
+        )
+
+        try:
+            page_results, total_fetched = await execute_gallery_image_search_paged(
+                client=client,
+                image_path=image_path,
+                bot_page=bot_page,
+                results_per_page=_RESULTS_PER_PAGE,
+                max_eh_pages=_MAX_EH_PAGES,
+                options=image_options,
+            )
+            session_key = self._build_session_key(event)
+            self._last_search_results[session_key] = page_results
+        except SearchExecutionError as error:
+            yield event.plain_result(f"图片搜索失败: {error}")
+            if should_cleanup and image_path is not None:
+                image_path.unlink(missing_ok=True)
+            return
+
+        if should_cleanup and image_path is not None:
+            image_path.unlink(missing_ok=True)
+
+        logger.info(
+            f"[图片搜索处理] 搜索成功，当前页 {len(page_results)} 条，共抓取 {total_fetched} 条"
+        )
+
+        if not page_results:
+            if bot_page > 1:
+                yield event.plain_result(f"第 {bot_page} 页没有更多结果了")
+            else:
+                yield event.plain_result("没有找到结果，或当前 Cookie 权限不足")
+            return
+
+        render_keyword = "图片搜索"
+        render_dir = Path(self.plugin_config.ehentai_download_dir) / "search_render"
+        try:
+            image_result_path = await render_search_results_image(
+                keyword=render_keyword,
+                results=page_results,
+                display_limit=_RESULTS_PER_PAGE,
+                bot_page=bot_page,
+                total_fetched=total_fetched,
+                output_dir=render_dir,
+            )
+            yield event.image_result(str(image_result_path))
+        except SearchRenderError as error:
+            logger.warning(f"[图片搜索处理] 渲染搜索图失败，回退文本: {error}")
+            message_text = format_search_results_message(
+                render_keyword,
+                page_results,
+                _RESULTS_PER_PAGE,
+                bot_page=bot_page,
+                total_fetched=total_fetched,
+            )
+            yield event.plain_result(message_text)
+        except Exception as error:
+            logger.warning(f"[图片搜索处理] 搜索渲染图发送失败，回退文本: {error}")
+            message_text = format_search_results_message(
+                render_keyword,
+                page_results,
+                _RESULTS_PER_PAGE,
+                bot_page=bot_page,
+                total_fetched=total_fetched,
             )
             yield event.plain_result(message_text)
     

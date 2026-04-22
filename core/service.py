@@ -7,7 +7,7 @@ import ssl
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -119,6 +119,13 @@ class SearchOptions:
     f_srdd: int = 0
     f_spf: int = 0
     f_spt: int = 0
+
+
+@dataclass
+class ImageSearchOptions:
+    use_similarity_scan: bool = False
+    only_search_covers: bool = False
+    show_expunged: bool = False
 
 
 class EHentaiClient:
@@ -414,6 +421,35 @@ class EHentaiClient:
                 params["f_spt"] = str(options.f_spt)
 
         return f"{self.base_url}/?{urlencode(params)}"
+
+    def _resolve_image_search_url(self) -> str:
+        if self.site == "ex":
+            return "https://upld.exhentai.org/upld/image_lookup.php"
+        return "https://upld.e-hentai.org/image_lookup.php"
+
+    @staticmethod
+    def _build_query_url_with_page(query_url: str, eh_page: int) -> str:
+        parsed = urlparse(query_url)
+        query_items = parse_qsl(parsed.query, keep_blank_values=True)
+        query_dict: dict[str, str] = {}
+        for key, value in query_items:
+            if key != "page":
+                query_dict[key] = value
+        if eh_page > 0:
+            query_dict["page"] = str(eh_page)
+        query = urlencode(query_dict)
+        return parsed._replace(query=query).geturl()
+
+    @staticmethod
+    def _extract_image_search_query_url(body: str) -> str:
+        match = re.search(
+            r"https?://(?:exhentai\.org|e-hentai\.org)/\?[^\"'\s<>]*f_shash=[^\"'\s<>]+",
+            body,
+            re.IGNORECASE,
+        )
+        if not match:
+            return ""
+        return html.unescape(match.group(0)).strip()
 
     def _resolve_gmetadata_api_url(self) -> str:
         host = (urlparse(self.base_url).hostname or "").lower()
@@ -1305,6 +1341,181 @@ class EHentaiClient:
                     all_results.append(r)
             if len(page_results) < EH_PAGE_SIZE:
                 break  # e-hentai 已无更多结果
+
+        return all_results[start:end], len(all_results)
+
+    async def _image_search_upload_first_page(
+        self,
+        image_path: Path,
+        limit: int,
+        options: Optional[ImageSearchOptions] = None,
+    ) -> tuple[list[GalleryResult], str]:
+        if not image_path.exists() or not image_path.is_file():
+            raise FileNotFoundError(f"图片文件不存在: {image_path}")
+
+        image_options = options or ImageSearchOptions()
+        upload_url = self._resolve_image_search_url()
+        request_url = self._get_request_url_for_direct_ip(upload_url) if self.enable_direct_ip else upload_url
+
+        upload_file = image_path
+        temp_copy: Optional[Path] = None
+        if "." not in image_path.name:
+            upload_file = image_path.with_name(f"{image_path.name}.jpg")
+            upload_file.write_bytes(image_path.read_bytes())
+            temp_copy = upload_file
+
+        query_url = ""
+        headers = self._headers_for_url(upload_url)
+        headers["Referer"] = f"{self.base_url}/"
+        headers["Origin"] = self.base_url
+
+        data: dict[str, str] = {"f_sfile": "File Search"}
+        if image_options.use_similarity_scan:
+            data["fs_similar"] = "on"
+        if image_options.only_search_covers:
+            data["fs_covers"] = "on"
+        if image_options.show_expunged:
+            data["fs_exp"] = "on"
+
+        try:
+            with upload_file.open("rb") as file_obj:
+                files = {
+                    "sfile": (
+                        upload_file.name,
+                        file_obj,
+                        "application/octet-stream",
+                    )
+                }
+
+                async with httpx.AsyncClient(
+                    timeout=self.timeout,
+                    verify=False,
+                    follow_redirects=False,
+                    proxy=self.proxy or None,
+                ) as client:
+                    resp = await client.post(
+                        request_url,
+                        headers=headers,
+                        data=data,
+                        files=files,
+                    )
+
+                    if resp.status_code in (301, 302, 303, 307, 308):
+                        location = (resp.headers.get("Location") or "").strip()
+                        if not location:
+                            raise RuntimeError("图片搜索上传成功但未返回跳转地址")
+
+                        query_url = urljoin(upload_url, location)
+                        page_request_url = (
+                            self._get_request_url_for_direct_ip(query_url)
+                            if self.enable_direct_ip
+                            else query_url
+                        )
+                        page_resp = await client.get(
+                            page_request_url,
+                            headers=self._headers_for_url(query_url),
+                        )
+                    else:
+                        page_resp = resp
+
+            if page_resp.status_code not in (200, 451):
+                self._raise_for_response(page_resp)
+
+            results = self._parse_search_results(page_resp.text, limit)
+            if not results and page_resp.status_code == 451:
+                raise RuntimeError(
+                    "图片搜索页返回 451，且正文中未解析出图集列表。请配置 EHENTAI_PROXY，或切换到可访问 E-Hentai 的网络环境。"
+                )
+
+            if not query_url:
+                query_url = self._extract_image_search_query_url(page_resp.text)
+            if query_url:
+                query_url = html.unescape(query_url)
+
+            await self._enrich_japanese_titles(results)
+            return results, query_url
+        finally:
+            if temp_copy is not None:
+                try:
+                    temp_copy.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+    async def _image_search_query_page(
+        self,
+        query_url: str,
+        limit: int,
+        eh_page: int,
+    ) -> list[GalleryResult]:
+        page_url = self._build_query_url_with_page(query_url, eh_page)
+        request_url = self._get_request_url_for_direct_ip(page_url) if self.enable_direct_ip else page_url
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout,
+            verify=False,
+            follow_redirects=True,
+            proxy=self.proxy or None,
+        ) as client:
+            resp = await client.get(request_url, headers=self._headers_for_url(page_url))
+
+        results = self._search_from_response(resp, limit)
+        await self._enrich_japanese_titles(results)
+        return results
+
+    async def image_search_paged(
+        self,
+        image_path: Path,
+        bot_page: int = 1,
+        results_per_page: int = 5,
+        max_eh_pages: int = 3,
+        options: Optional[ImageSearchOptions] = None,
+    ) -> tuple[list[GalleryResult], int]:
+        """图片搜索分页。流程为：先上传图片拿到首屏，再按 query URL 翻页。"""
+        EH_PAGE_SIZE = 25
+        start = (bot_page - 1) * results_per_page
+        end = bot_page * results_per_page
+
+        first_page, query_url = await self._image_search_upload_first_page(
+            image_path=image_path,
+            limit=EH_PAGE_SIZE,
+            options=options,
+        )
+
+        all_results: list[GalleryResult] = []
+        seen: set[str] = set()
+
+        for item in first_page:
+            dedupe_key = f"{item.gid}:{item.token}"
+            if dedupe_key not in seen:
+                seen.add(dedupe_key)
+                all_results.append(item)
+
+        if end <= len(all_results):
+            return all_results[start:end], len(all_results)
+
+        if not query_url:
+            return all_results[start:end], len(all_results)
+
+        from math import ceil as _ceil
+
+        eh_pages_needed = min(max(1, max_eh_pages), _ceil(end / EH_PAGE_SIZE))
+        for eh_page_idx in range(1, eh_pages_needed):
+            if len(all_results) >= end:
+                break
+
+            page_results = await self._image_search_query_page(
+                query_url=query_url,
+                limit=EH_PAGE_SIZE,
+                eh_page=eh_page_idx,
+            )
+            for item in page_results:
+                dedupe_key = f"{item.gid}:{item.token}"
+                if dedupe_key not in seen:
+                    seen.add(dedupe_key)
+                    all_results.append(item)
+
+            if len(page_results) < EH_PAGE_SIZE:
+                break
 
         return all_results[start:end], len(all_results)
 
