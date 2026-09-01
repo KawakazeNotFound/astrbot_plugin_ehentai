@@ -5,6 +5,7 @@
 ## 功能
 
 - `/search <关键词>` - 搜索 E-Hentai 本子并返回搜索结果
+- `/search <关键词> [过滤参数]` - 支持在消息里直接写简化过滤参数
 - `/download [-original] <关键词>` - 搜索并下载 E-Hentai 本子到 R2 或本地
 
 ## 安装
@@ -61,6 +62,12 @@
 # 搜索关键词并查看第 2 页结果（序号将从 1-5 重新排列）
 /search 关键词 --page 2
 
+# 简化过滤参数示例：标题、标签、排除词、上传者
+/search 赛马娘 --title "comic aun" --tag f:milf --not furry --uploader alice
+
+# 也可以直接使用命名空间快捷写法
+/search 赛马娘 --f milf --m muscle --l english
+
 # 下载搜索结果中返回的列表第一本（也可以输入 2、3 等序号）
 /download 1
 
@@ -73,6 +80,20 @@
 # 下面这种写法也会被识别
 /download --original 1
 ```
+
+### 搜索过滤参数
+
+消息中的简化过滤参数会被转换为 E-Hentai 原生搜索语法。常用项包括：
+
+- `--title`：标题过滤，转换为 `title:`
+- `--tag`：标签过滤，传入 `f:milf` 这类原生写法时会直接保留
+- `--uploader`、`--gid`、`--comment`、`--favnote`
+- `--not` / `--exclude`：排除词，转换为 `-term`
+- `--or`：OR 词，转换为 `~term`
+- `--page`：分页
+- `--f`、`--m`、`--a`、`--c`、`--g`、`--l`、`--p`、`--x`、`--o`、`--cos`、`--loc`：命名空间快捷写法
+
+高级用户仍然可以直接输入原生语法，比如 `title:"comic aun" -furry f:milf`。
 
 ## 注意事项
 

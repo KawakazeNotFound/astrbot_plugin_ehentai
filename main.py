@@ -27,6 +27,7 @@ from astrbot.api.event import MessageChain
 from .utils.config_loader import PluginConfig
 from .utils.logger_compat import init_logger, get_logger
 from .core.service import EHentaiClient, SearchOptions, CHROME_DESKTOP_USER_AGENT, GalleryResult
+from .logic.search_query import parse_search_request
 from .logic.search_logic import (
     SearchExecutionError,
     execute_gallery_search,
@@ -161,7 +162,7 @@ class EHentaiPlugin(Star):
     async def handle_search(self, event: AstrMessageEvent):
         """搜索 E-Hentai 本子
         
-        用法: /search <关键词> [--page N]
+        用法: /search <关键词> [--page N] [--title ...] [--tag ...] [--not ...]
         """
         logger = get_logger()
         
@@ -170,20 +171,17 @@ class EHentaiPlugin(Star):
         if raw.startswith("search "):
             raw = raw[7:]  # len("search ") = 7
         logger.info(f"[搜索处理] 开始处理搜索请求: raw='{raw}'")
-        
-        # 解析 --page N 参数
+
+        search_request = parse_search_request(raw)
+        keyword = search_request.query
+        bot_page = search_request.page
+
         configured_results_per_page = self.plugin_config.ehentai_max_results
         _RESULTS_PER_PAGE = configured_results_per_page if configured_results_per_page > 0 else 5
         _MAX_EH_PAGES = 3
         
-        page_match = re.search(r'--page\s+(\d+)', raw)
-        bot_page = int(page_match.group(1)) if page_match else 1
-        if bot_page < 1:
-            bot_page = 1
-        keyword = re.sub(r'--page\s+\d+', '', raw).strip()
-        
         if not keyword:
-            yield event.plain_result("用法: /search <关键词> [--page N]")
+            yield event.plain_result("用法: /search <关键词> [--page N] [--title ...] [--tag ...] [--not ...]")
             return
         
         logger.info(f"[搜索处理] keyword='{keyword}', bot_page={bot_page}")
