@@ -1153,6 +1153,7 @@ class EHentaiClient:
         logger.info(f"[搜索] 开始搜索: keyword='{keyword}', limit={limit}, site={self.site}, backend={self.backend}")
         
         # 如果配置了 Cloudflare Worker，使用 Worker 搜索
+        worker_error: Optional[Exception] = None
         if self.cloudflare_worker_url:
             logger.info(f"[搜索] 使用 Cloudflare Worker 搜索: {self.cloudflare_worker_url}")
             try:
@@ -1191,7 +1192,31 @@ class EHentaiClient:
                 await self._enrich_japanese_titles(results)
                 return results
             except Exception as error:
+                worker_error = error
                 logger.warning(f"[搜索] Worker 搜索出错: {type(error).__name__}: {error}，将降级到直连模式")
+                # exhentai.org 常因 Worker 出口 IP 被风控而失败（返回空白页），
+                # 先尝试切换到备选站点再走一次 Worker，都失败才降级直连
+                original_site = self.site
+                original_base_url = self.base_url
+                try:
+                    if self.site == "ex":
+                        self.site = "e"
+                        self.base_url = "https://e-hentai.org"
+                    else:
+                        self.site = "ex"
+                        self.base_url = "https://exhentai.org"
+                    logger.info(f"[搜索] 尝试切换到备选站点 {self.site} 重新使用 Worker 搜索...")
+                    results = await self._search_via_worker(keyword, limit, options, eh_page)
+                    if results:
+                        logger.info(f"[搜索] 备选站点 Worker 搜索成功，获得 {len(results)} 条结果")
+                        await self._enrich_japanese_titles(results)
+                        return results
+                    logger.warning(f"[搜索] 备选站点 {self.site} 仍未获得结果，恢复站点并降级直连")
+                except Exception as alt_error:
+                    logger.warning(f"[搜索] 备选站点 Worker 搜索也失败: {type(alt_error).__name__}: {alt_error}")
+                finally:
+                    self.site = original_site
+                    self.base_url = original_base_url
                 # 继续使用原有的直连逻辑
         
         # 如果配置了搜索失败立即降级，或者后端是 curl_cffi，尝试 curl_cffi
@@ -1271,10 +1296,13 @@ class EHentaiClient:
                         results = self._search_from_response(resp, limit)
                         await self._enrich_japanese_titles(results)
                         return results
-                    except (EmptySearchResponseError, httpx.HTTPStatusError) as retry_error:
+                    except Exception as retry_error:
+                        worker_hint = f"Worker 报错: {worker_error}。" if worker_error else ""
                         raise RuntimeError(
-                            "直连 IP 与标准 DNS 均无法获取搜索页，当前网络可能被 E-Hentai 拦截"
-                            "（或直连 IP 已失效）。请配置 EHENTAI_PROXY 或 EHENTAI_CLOUDFLARE_WORKER_URL"
+                            f"{worker_hint}直连 IP 与标准 DNS 均无法获取搜索页（{type(retry_error).__name__}），"
+                            "当前网络无法访问该站点，或 Worker 无法代理 exhentai.org。"
+                            "请将 ehentai_site 切换为 e（e-hentai.org），"
+                            "或配置可用的 EHENTAI_PROXY / EHENTAI_CLOUDFLARE_WORKER_URL"
                         ) from retry_error
                     finally:
                         self.enable_direct_ip = True
