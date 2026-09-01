@@ -297,6 +297,8 @@ class EHentaiPlugin(Star):
         用法: /search <关键词> [--page N] [--title ...] [--tag ...] [--not ...]
         """
         logger = get_logger()
+        # 停止事件继续传播，避免内置 Agent / 其他插件重复回复
+        event.stop_event()
         
         raw = event.message_str.strip()
         # 移除命令前缀 "search "
@@ -380,6 +382,8 @@ class EHentaiPlugin(Star):
         或发送 /imgsearch 并附带一张图片。
         """
         logger = get_logger()
+        # 停止事件继续传播，避免内置 Agent / 其他插件重复回复
+        event.stop_event()
 
         raw = event.message_str.strip()
         if raw.startswith("imgsearch "):
@@ -536,6 +540,8 @@ class EHentaiPlugin(Star):
         用法: /download [-original] <关键词>
         """
         logger = get_logger()
+        # 停止事件继续传播，避免内置 Agent / 其他插件重复回复
+        event.stop_event()
         
         raw_input = event.message_str.strip()
         
@@ -699,6 +705,8 @@ class EHentaiPlugin(Star):
         4. 返回可下载的链接
         """
         logger = get_logger()
+        # 停止事件继续传播，避免内置 Agent / 其他插件重复回复
+        event.stop_event()
         
         raw = event.message_str.strip()
         logger.info(f"[链接处理] 捕捉到画廊链接: {raw[:80]}")

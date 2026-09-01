@@ -602,6 +602,7 @@ async def fetch_gallery_info(
                         headers=headers,
                         cookies=dict(cookies_header) if cookies_header else None,
                         timeout=client.timeout,
+                        extensions=client._direct_ip_extensions(gallery_url),
                     )
                     resp.raise_for_status()
                     body = resp.text

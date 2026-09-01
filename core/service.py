@@ -29,6 +29,11 @@ class LoggerProxy:
 
 logger = LoggerProxy()
 
+
+class EmptySearchResponseError(RuntimeError):
+    """请求返回了空响应体，通常表示直连被服务器忽略或网络被拦截。"""
+
+
 try:
     from curl_cffi import requests as curl_requests
     from curl_cffi.const import CurlHttpVersion
@@ -333,6 +338,15 @@ class EHentaiClient:
         if href.startswith("http://") or href.startswith("https://"):
             return href
         return f"{self.base_url}{href if href.startswith('/') else '/' + href}"
+
+    def _direct_ip_extensions(self, original_url: str) -> dict:
+        """直连 IP 请求时携带原始域名的 SNI，避免服务器因 SNI 不匹配返回空响应或握手失败。"""
+        if not self.enable_direct_ip:
+            return {}
+        hostname = (urlparse(original_url).hostname or "").lower()
+        if not hostname:
+            return {}
+        return {"sni_hostname": hostname}
 
     def _get_request_url_for_direct_ip(self, original_url: str) -> str:
         """
@@ -905,6 +919,12 @@ class EHentaiClient:
             logger.error(f"[搜索响应] 非预期状态码: {status_code}")
             self._raise_for_response(resp)
 
+        if not body.strip():
+            raise EmptySearchResponseError(
+                f"搜索响应为空 (status={status_code})，请求可能被服务器忽略或拦截。"
+                "请配置 EHENTAI_PROXY 或 EHENTAI_CLOUDFLARE_WORKER_URL 后重试"
+            )
+
         logger.debug(f"[搜索响应] 响应状态码: {status_code}, 响应体大小: {len(body)} 字节")
         
         # 兼容 table/div 结构，只检查是否存在 .itg 容器
@@ -1213,15 +1233,27 @@ class EHentaiClient:
                     follow_redirects=True,
                 ) as client:
                     logger.debug(f"[搜索] 发送搜索请求 (直连 IP)")
-                    resp = await client.get(request_url, headers=self._headers_for_url(search_url))
+                    resp = await client.get(
+                        request_url,
+                        headers=self._headers_for_url(search_url),
+                        extensions=self._direct_ip_extensions(search_url),
+                    )
                 logger.info(f"[搜索] 直连 IP 搜索成功，状态码: {resp.status_code}")
                 results = self._search_from_response(resp, limit)
-                await self._enrich_japanese_titles(results)
-                return results
+                if results:
+                    await self._enrich_japanese_titles(results)
+                    return results
+                logger.warning(
+                    "[搜索] 直连 IP 未解析出任何结果，继续尝试标准 DNS / 备选站点"
+                )
             except Exception as error:
-                if self._is_connect_error(error):
+                if (
+                    self._is_connect_error(error)
+                    or isinstance(error, EmptySearchResponseError)
+                    or isinstance(error, httpx.HTTPStatusError)
+                ):
                     logger.warning(
-                        f"[搜索] 直连 IP 连接失败，自动降级到标准 DNS: {type(error).__name__}: {error}",
+                        f"[搜索] 直连 IP 失败({type(error).__name__})，自动降级到标准 DNS: {error}",
                     )
                     # 临时禁用直连 IP
                     self.enable_direct_ip = False
@@ -1239,6 +1271,11 @@ class EHentaiClient:
                         results = self._search_from_response(resp, limit)
                         await self._enrich_japanese_titles(results)
                         return results
+                    except (EmptySearchResponseError, httpx.HTTPStatusError) as retry_error:
+                        raise RuntimeError(
+                            "直连 IP 与标准 DNS 均无法获取搜索页，当前网络可能被 E-Hentai 拦截"
+                            "（或直连 IP 已失效）。请配置 EHENTAI_PROXY 或 EHENTAI_CLOUDFLARE_WORKER_URL"
+                        ) from retry_error
                     finally:
                         self.enable_direct_ip = True
                 else:
@@ -1456,7 +1493,11 @@ class EHentaiClient:
             follow_redirects=True,
             proxy=self.proxy or None,
         ) as client:
-            resp = await client.get(request_url, headers=self._headers_for_url(page_url))
+            resp = await client.get(
+                request_url,
+                headers=self._headers_for_url(page_url),
+                extensions=self._direct_ip_extensions(page_url),
+            )
 
         results = self._search_from_response(resp, limit)
         await self._enrich_japanese_titles(results)
@@ -1537,12 +1578,19 @@ class EHentaiClient:
             request_url = self._get_request_url_for_direct_ip(archive_page_url) if self.enable_direct_ip else archive_page_url
             logger.debug(f"[存档] 请求 URL: {request_url}, 直连模式: {self.enable_direct_ip}")
             resp = await client.get(
-                request_url, headers=self._headers_for_url(archive_page_url)
+                request_url,
+                headers=self._headers_for_url(archive_page_url),
+                extensions=self._direct_ip_extensions(archive_page_url),
             )
         
         logger.debug(f"[存档] 获取存档页面响应: 状态码={resp.status_code}")
         if not self.cloudflare_worker_url:
             self._raise_for_response(resp)
+            if not resp.text.strip():
+                raise RuntimeError(
+                    "存档页面返回空响应，直连可能被服务器忽略。"
+                    "请配置 EHENTAI_PROXY 或 EHENTAI_CLOUDFLARE_WORKER_URL"
+                )
             
         if self._is_login_required_page(resp.text):
             logger.error(f"[存档] 需要登录 Cookie 才能访问")
@@ -1724,6 +1772,7 @@ class EHentaiClient:
                     request_url,
                     data=payload,
                     headers=self._headers_for_url(archive_url),
+                    extensions=self._direct_ip_extensions(archive_url),
                 )
                 self._raise_for_response(resp)
 
@@ -1972,7 +2021,12 @@ class EHentaiClient:
                 logger.debug(f"[下载] 使用直连 IP 模式: {request_url}")
                 async with self._client() as client:
                     logger.debug(f"[下载] 开始下载流 (直连 IP)")
-                    async with client.stream("GET", request_url, headers=self._headers_for_url(url)) as resp:
+                    async with client.stream(
+                        "GET",
+                        request_url,
+                        headers=self._headers_for_url(url),
+                        extensions=self._direct_ip_extensions(url),
+                    ) as resp:
                         self._raise_for_response(resp)
                         logger.debug(f"[下载] 响应状态码: {resp.status_code}")
                         downloaded = 0
