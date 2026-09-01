@@ -51,3 +51,5 @@ dmypy.json
 /2Agent
 2Agent/
 venv/
+参考/
+data/

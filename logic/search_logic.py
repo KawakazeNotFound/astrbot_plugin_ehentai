@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
-from ..core.service import EHentaiClient, GalleryResult, SearchOptions
+from ..core.service import EHentaiClient, GalleryResult, ImageSearchOptions, SearchOptions
 from ..utils.logger_compat import get_logger
 
 
@@ -72,6 +73,33 @@ async def execute_gallery_search_paged(
     except Exception as error:
         err_text = _safe_error_text(error)
         logger.error(f"[搜索流程] 分页搜索失败: {type(error).__name__}: {err_text}")
+        raise SearchExecutionError(err_text) from error
+
+
+async def execute_gallery_image_search_paged(
+    client: EHentaiClient,
+    image_path: Path,
+    bot_page: int,
+    results_per_page: int = 5,
+    max_eh_pages: int = 3,
+    options: Optional[ImageSearchOptions] = None,
+) -> tuple[list[GalleryResult], int]:
+    """图片分页搜索。返回 (当前页结果, 本次共抓取条数)。"""
+    logger.info(
+        f"[图片搜索流程] 分页搜索: image_path='{image_path}', bot_page={bot_page}, "
+        f"results_per_page={results_per_page}, max_eh_pages={max_eh_pages}"
+    )
+    try:
+        return await client.image_search_paged(
+            image_path=image_path,
+            bot_page=bot_page,
+            results_per_page=results_per_page,
+            max_eh_pages=max_eh_pages,
+            options=options,
+        )
+    except Exception as error:
+        err_text = _safe_error_text(error)
+        logger.error(f"[图片搜索流程] 分页搜索失败: {type(error).__name__}: {err_text}")
         raise SearchExecutionError(err_text) from error
 
 

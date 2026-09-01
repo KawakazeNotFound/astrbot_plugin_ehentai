@@ -6,6 +6,7 @@
 
 - `/search <关键词>` - 搜索 E-Hentai 本子并返回搜索结果
 - `/search <关键词> [过滤参数]` - 支持在消息里直接写简化过滤参数
+- `/imgsearch [图片URL] [--page N] [--similar] [--covers] [--expunged]` - 以图搜图（也支持直接附图）
 - `/download [-original] <关键词>` - 搜索并下载 E-Hentai 本子到 R2 或本地
 
 ## 安装
@@ -68,6 +69,18 @@
 # 也可以直接使用命名空间快捷写法
 /search 赛马娘 --f milf --m muscle --l english
 
+# 以图搜图（图片 URL）
+/imgsearch https://example.com/a.jpg
+
+# 以图搜图并查看第 2 页，开启相似搜索
+/imgsearch https://example.com/a.jpg --page 2 --similar
+
+# 直接发送 /imgsearch 并附带一张图片（推荐）
+/imgsearch
+
+# 只发送 /imgsearch 不带参数，会进入 60 秒等待下一条消息（可发图片或图片 URL）
+# 也支持通过“引用回复”一张图片来触发以图搜图
+
 # 下载搜索结果中返回的列表第一本（也可以输入 2、3 等序号）
 /download 1
 
@@ -100,6 +113,9 @@
 - 需要配置有效的 E-Hentai 登录 Cookie 才能下载
 - 如果使用 exhentai 站点，通常需要配置 IGNEOUS Cookie
 - R2 上传需要有效的 Cloudflare 凭证
+- `/imgsearch` 支持参数：`--similar`（fs_similar）、`--covers`（fs_covers）、`--expunged`（fs_exp）
+- `/imgsearch` 无参数时会等待 60 秒接收下一条图片消息或图片 URL
+- `/imgsearch` 会尝试从“引用消息（Reply）”中提取被引用图片作为搜索输入
 
 ## 常见问题
 
