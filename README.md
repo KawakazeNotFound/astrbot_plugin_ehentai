@@ -133,7 +133,7 @@ A: 确保 R2 凭证正确，并且 Bucket 名称和 Endpoint 配置无误。
 
 ## 版本
 
-当前插件版本：v0.0.3
+当前插件版本：v0.0.4
 
 当前转换版本基于 nonebot-plugin-ehentai v0.0.1
 
