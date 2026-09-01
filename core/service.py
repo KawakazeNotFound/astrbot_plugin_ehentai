@@ -902,7 +902,7 @@ class EHentaiClient:
                 favorited=-1,  # 初始未收藏
             )
             results.append(result)
-            logger.debug(f"[搜索解析] 第 {idx} 行: ✓ 解析成功 - {title[:30]}")
+            logger.debug(f"[搜索解析] 第 {idx} 行: OK 解析成功 - {title[:30]}")
             
             # 5. 限制数量（对标官方 parse_info_list 的 limit 参数）
             if len(results) >= limit:
